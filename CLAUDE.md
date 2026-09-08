@@ -224,3 +224,18 @@ being replaced, and the other order yields "Qwen3.8 27B Q4 K M".
 
 Invent no capitals on top of either. A rule that title-cased the first letter
 would be wrong exactly where it showed: OpenAI writes it "gpt oss".
+
+## The model index cache does not notice a code change
+
+`models.json` is keyed on path + mtime + size — all properties of the FILE.
+Change what `describeModel` produces and every already-indexed model keeps
+its old description for good, because nothing will ever re-read a file that
+was not touched. **Bump `DERIVATION` in library.ts** whenever the derivation
+changes; a cache written under a different one is discarded whole.
+
+## The Server screen shows the gateway's port
+
+The router sits on 17172 and is internal. The number a user reads under
+"Port" has to be the one a client connects to (the gateway, 17171) — the
+router's own port honours neither the API key nor the network toggle.
+`RouterStatus.port` is the wrong field for anything user-facing.

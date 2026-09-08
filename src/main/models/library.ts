@@ -16,23 +16,45 @@ import { indexDir } from '../app/settings-store.js'
 import { describeModel, type ModelInfo } from './describe.js'
 import { readGgufHeader } from './gguf.js'
 
+/**
+ * Bump this when `describeModel` changes what it produces.
+ *
+ * The rest of the cache key — path, mtime, size — describes the FILE, and
+ * none of it notices that the code deriving the description changed. So
+ * improving a display name left every already-indexed model showing the old
+ * one, for good: the files had not been touched, so nothing was ever re-read.
+ * This is the part of the key that belongs to us.
+ */
+const DERIVATION = 2
+
 interface CacheEntry {
   mtimeMs: number
   sizeBytes: number
   info: ModelInfo
 }
 
-type Cache = Record<string, CacheEntry>
+interface Cache {
+  derivation: number
+  entries: Record<string, CacheEntry>
+}
 
 function cachePath(): string {
   return join(indexDir(), 'models.json')
 }
 
+function emptyCache(): Cache {
+  return { derivation: DERIVATION, entries: {} }
+}
+
 function loadCache(): Cache {
   try {
-    return JSON.parse(readFileSync(cachePath(), 'utf8')) as Cache
+    const raw = JSON.parse(readFileSync(cachePath(), 'utf8')) as Partial<Cache>
+    // A cache written by a version that described models differently is not
+    // a cache, it is a set of stale answers.
+    if (raw.derivation !== DERIVATION || !raw.entries) return emptyCache()
+    return { derivation: DERIVATION, entries: raw.entries }
   } catch {
-    return {}
+    return emptyCache()
   }
 }
 
@@ -91,13 +113,13 @@ export function scanFolder(root: string, cache: Cache): ScanResult {
       const path = join(dir, name)
       try {
         const st = statSync(path)
-        const hit = cache[path]
+        const hit = cache.entries[path]
         if (hit && hit.mtimeMs === st.mtimeMs && hit.sizeBytes === st.size) {
           models.push(hit.info)
           continue
         }
         const info = describeModel(path, readGgufHeader(path), projector)
-        cache[path] = { mtimeMs: st.mtimeMs, sizeBytes: st.size, info }
+        cache.entries[path] = { mtimeMs: st.mtimeMs, sizeBytes: st.size, info }
         models.push(info)
       } catch (err) {
         // A download in progress, a truncated file, something that is not a

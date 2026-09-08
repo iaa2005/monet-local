@@ -13,6 +13,7 @@ import { ipcMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { useT } from '@/stores/uiStore'
 import type {
+  EndpointInfo,
   ModelInfo,
   ProfilesFile,
   RouterStatus,
@@ -28,6 +29,8 @@ export function Server(): JSX.Element {
     devices: [],
   })
   const [strays, setStrays] = useState<StrayProcess[]>([])
+  /** The port CLIENTS use. The router's own is internal and not this. */
+  const [endpoint, setEndpoint] = useState<EndpointInfo | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const [profiles, setProfiles] = useState<ProfilesFile | null>(null)
   const [values, setValues] = useState<Profile>({})
@@ -46,15 +49,17 @@ export function Server(): JSX.Element {
     'h-9 w-full rounded-lg border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
   const refresh = useCallback(async () => {
-    const [s, scan, hw, str, p, pend] = await Promise.all([
+    const [s, scan, hw, str, p, pend, ep] = await Promise.all([
       api()?.server.status(),
       api()?.models.scan(),
       api()?.server.hardware(),
       api()?.server.strays(),
       api()?.profiles.get(),
       api()?.server.pending(),
+      api()?.server.endpoint(),
     ])
     if (s) setStatus(s)
+    if (ep) setEndpoint(ep)
     if (hw) setHardware(hw)
     if (str) setStrays(str)
     if (p) setProfiles(p)
@@ -235,7 +240,14 @@ export function Server(): JSX.Element {
           </div>
         </div>
         <div className="rounded-xl border border-border bg-card px-4 py-3">
-          <Stat label={t('settings.port')} value={String(status?.port ?? 17171)} />
+          {/* The gateway's port, not the router's. The router sits on
+              17172 and is nobody's business but this app's; putting that
+              number under a label reading "Port" invites a client to the
+              one address that will not honour the API key. */}
+          <Stat
+            label={t('settings.port')}
+            value={String(endpoint?.port ?? 17171)}
+          />
         </div>
         <div className="rounded-xl border border-border bg-card px-4 py-3">
           <Stat
