@@ -505,33 +505,35 @@ export function Server(): JSX.Element {
             </p>
           ) : null}
 
-          <div className="mt-5">
-            <Verdict
-              estimate={estimate}
-              onApply={(fix) => {
-                // Every suggestion maps to a flag the panel below owns, so
-                // "do that for me" is one setState rather than advice.
-                const next: Profile = { ...values }
-                if (fix.code === 'lower-context' && fix.value)
-                  next['ctxSize'] = fix.value
-                if (fix.code === 'enable-no-kv-offload')
-                  next['noKvOffload'] = true
-                if (fix.code === 'enable-no-repack') next['noRepack'] = true
-                if (fix.code === 'disable-mlock') next['mlock'] = false
-                if (fix.code === 'lower-ubatch')
-                  next['ubatchSize'] = Math.max(
-                    16,
-                    Math.floor(Number(values['ubatchSize'] ?? 256) / 2),
-                  )
-                if (fix.code === 'quantise-kv') {
-                  next['flashAttn'] = 'on'
-                  next['cacheTypeK'] = 'q8_0'
-                  next['cacheTypeV'] = 'q4_0'
-                }
-                edit(next)
-              }}
-            />
-          </div>
+          {/* No wrapper. A sticky element cannot leave its parent's box, so
+              a div fitted to the card would unstick it the moment the
+              scroll passed the card's own height — which is exactly what
+              it did. Its parent has to be the tall one: the section. */}
+          <Verdict
+            estimate={estimate}
+            onApply={(fix) => {
+              // Every suggestion maps to a flag the panel below owns, so
+              // "do that for me" is one setState rather than advice.
+              const next: Profile = { ...values }
+              if (fix.code === 'lower-context' && fix.value)
+                next['ctxSize'] = fix.value
+              if (fix.code === 'enable-no-kv-offload')
+                next['noKvOffload'] = true
+              if (fix.code === 'enable-no-repack') next['noRepack'] = true
+              if (fix.code === 'disable-mlock') next['mlock'] = false
+              if (fix.code === 'lower-ubatch')
+                next['ubatchSize'] = Math.max(
+                  16,
+                  Math.floor(Number(values['ubatchSize'] ?? 256) / 2),
+                )
+              if (fix.code === 'quantise-kv') {
+                next['flashAttn'] = 'on'
+                next['cacheTypeK'] = 'q8_0'
+                next['cacheTypeV'] = 'q4_0'
+              }
+              edit(next)
+            }}
+          />
           <div className="mt-4">
             <ProfilePanel
               values={values}

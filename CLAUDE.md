@@ -255,3 +255,19 @@ powers of two. Linear would put 8192 at three percent of a track reaching
 memory cost grows. The powers of two remain as clickable marks under it —
 they are still what most people want — but values between them are legal,
 cost real memory, and used to be unreachable.
+
+## A sticky element cannot leave its parent's box
+
+The memory verdict sticks to the top of `<main>` while the settings scroll
+under it. That works only while its PARENT is tall: `position: sticky` is
+clamped to the containing block, so wrapping the card in a `<div>` fitted to
+it — even just for a margin — unsticks it the moment the scroll passes the
+card's own height. Measured: wrapped, it ended up 802px above the viewport;
+placed directly in the section, it stayed pinned. Give it spacing on the
+sticky element itself, never a wrapper.
+
+Two more things it needs: the scroll container is `<main>`, not the window,
+so the IntersectionObserver that detects "stuck" is rooted there; and the
+stuck state swaps the translucent tone wash for an opaque background rather
+than layering a second `bg-*` on the same element, which would be settled by
+stylesheet order rather than by the order the classes are written.
