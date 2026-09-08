@@ -152,3 +152,16 @@ bare `TypeError: fetch failed` with the ECONNREFUSED buried in its cause.
 Every call that talks to the router checks the process first and corrects the
 state on a failed connection, so the screen stops offering a button that
 cannot work.
+
+## "Not ours" is the hard half of stray detection
+
+`findStrays` takes every pid this app is responsible for — the Electron
+process **and** the router it spawned — and treats descendants as ours too,
+because router mode starts a child llama-server per loaded model. Filtering
+on the Electron pid alone is worthless: that pid is never a llama-server, so
+the app listed its own router as someone else's and offered a button to kill
+it. On Windows that kill is a TerminateProcess, i.e. **exit code 1**, so the
+next Load failed with `llama-server exited with code 1` pointing at nothing
+the user had done wrong. Use CIM, not `tasklist`: tasklist reports no parent,
+and without parents there is no way to tell our own model children from
+someone else's server.

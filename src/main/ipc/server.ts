@@ -96,7 +96,12 @@ export function registerServerIpc(): void {
 
   ipcMain.handle('server:hardware', () => hardware())
 
-  ipcMain.handle('server:strays', () => findStrays(process.pid))
+  // Ours: this process, and the router it spawned. Without the second the
+  // app reports its own server as someone else's and offers to kill it.
+  const ownPids = (): number[] =>
+    [process.pid, router?.pid].filter((p): p is number => p !== undefined)
+
+  ipcMain.handle('server:strays', () => findStrays(ownPids()))
   ipcMain.handle('server:killStray', (_e, pid: number) => killStray(pid))
 
   ipcMain.handle('server:start', async () => {
@@ -104,7 +109,7 @@ export function registerServerIpc(): void {
     if (!pack) throw new Error('no runtime installed')
     // Two llama-servers over one set of weights is how a machine ends up with
     // 103 MB free and 300k page faults a second. Refuse rather than join in.
-    const strays = await findStrays(process.pid)
+    const strays = await findStrays(ownPids())
     if (strays.length && !router) {
       throw new Error(
         `llama-server is already running (pid ${strays.map((s) => s.pid).join(', ')})`,

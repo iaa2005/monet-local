@@ -82,6 +82,11 @@ export class Router {
     return this.stateValue
   }
 
+  /** The llama-server we spawned, so it is not mistaken for someone else's. */
+  get pid(): number | undefined {
+    return this.child?.pid
+  }
+
   onChange(cb: (s: RouterStatus) => void): () => void {
     this.listeners.add(cb)
     return () => this.listeners.delete(cb)

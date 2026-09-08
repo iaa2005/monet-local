@@ -8,6 +8,13 @@
  *
  * So: before starting, look. Tell the user what is already running and offer
  * to stop it, rather than adding a second claimant to 16 GB of weights.
+ *
+ * "Not ours" is the whole difficulty. The first version excluded only the
+ * Electron process id — which is never a llama-server — so the router this
+ * app had just started appeared in its own warning, under a button offering
+ * to stop it. Killing that is a TerminateProcess, which is exit code 1 on
+ * Windows, and the next Load then failed with "llama-server exited with code
+ * 1" pointing at nothing the user had done wrong.
  */
 
 import { exec } from 'node:child_process'
@@ -21,33 +28,83 @@ export interface StrayProcess {
   rssBytes?: number
 }
 
-export async function findStrays(ownPid?: number): Promise<StrayProcess[]> {
-  try {
-    if (process.platform === 'win32') {
-      // CSV keeps the parse honest on a localised Windows, where the table
-      // headers are translated but the columns are not.
-      const { stdout } = await run(
-        'tasklist /FI "IMAGENAME eq llama-server.exe" /FO CSV /NH',
-      )
-      return stdout
-        .split(/\r?\n/)
-        .map((line) => line.match(/^"[^"]*","(\d+)","[^"]*","[^"]*","([^"]*)"/))
-        .filter((m): m is RegExpMatchArray => !!m)
-        .map((m) => ({
-          pid: Number(m[1]),
-          rssBytes: Number((m[2] ?? '').replace(/[^\d]/g, '')) * 1024 || undefined,
-        }))
-        .filter((p) => p.pid !== ownPid)
+/** A llama-server process and who started it. */
+export interface ProcRow {
+  pid: number
+  ppid: number
+  rssBytes?: number
+}
+
+/**
+ * Which of these processes are not ours.
+ *
+ * Ownership is inherited: in router mode llama-server spawns a child per
+ * loaded model, so a process whose parent is ours is ours as well, however
+ * deep. Pure and exported so the rule can be tested without a process tree.
+ */
+export function strayPids(rows: ProcRow[], ours: number[]): StrayProcess[] {
+  const owned = new Set(ours)
+  // Repeat until nothing new is claimed: a grandchild is only recognisable
+  // once its parent has been.
+  for (let changed = true; changed; ) {
+    changed = false
+    for (const r of rows) {
+      if (owned.has(r.pid) || !owned.has(r.ppid)) continue
+      owned.add(r.pid)
+      changed = true
     }
-    const { stdout } = await run('ps -eo pid,rss,comm | grep llama-server')
+  }
+  return rows
+    .filter((r) => !owned.has(r.pid))
+    .map((r) => ({ pid: r.pid, ...(r.rssBytes ? { rssBytes: r.rssBytes } : {}) }))
+}
+
+async function llamaServers(): Promise<ProcRow[]> {
+  if (process.platform === 'win32') {
+    // CIM rather than tasklist: tasklist does not report a parent, and
+    // without parents there is no way to tell our own router's model
+    // children from someone else's server. Written without nested quotes so
+    // it survives the trip through cmd.
+    const { stdout } = await run(
+      'powershell -NoProfile -NonInteractive -Command ' +
+        '"Get-CimInstance Win32_Process | Where-Object -Property Name -EQ -Value llama-server.exe ' +
+        '| Select-Object ProcessId,ParentProcessId,WorkingSetSize | ConvertTo-Csv -NoTypeInformation"',
+    )
     return stdout
       .split(/\r?\n/)
-      .map((l) => l.trim().match(/^(\d+)\s+(\d+)/))
+      .slice(1) // the header
+      .map((line) => line.match(/^"(\d+)","(\d+)","(\d+)"/))
       .filter((m): m is RegExpMatchArray => !!m)
-      .map((m) => ({ pid: Number(m[1]), rssBytes: Number(m[2]) * 1024 }))
-      .filter((p) => p.pid !== ownPid)
+      .map((m) => ({
+        pid: Number(m[1]),
+        ppid: Number(m[2]),
+        rssBytes: Number(m[3]) || undefined,
+      }))
+  }
+  const { stdout } = await run('ps -eo pid,ppid,rss,comm')
+  return stdout
+    .split(/\r?\n/)
+    .filter((l) => l.includes('llama-server'))
+    .map((l) => l.trim().match(/^(\d+)\s+(\d+)\s+(\d+)/))
+    .filter((m): m is RegExpMatchArray => !!m)
+    .map((m) => ({
+      pid: Number(m[1]),
+      ppid: Number(m[2]),
+      rssBytes: Number(m[3]) * 1024 || undefined,
+    }))
+}
+
+/**
+ * @param ours every process id this app is responsible for — itself, and the
+ * router it spawned. Their descendants are worked out from the tree.
+ */
+export async function findStrays(ours: number[] = []): Promise<StrayProcess[]> {
+  try {
+    return strayPids(await llamaServers(), ours)
   } catch {
-    // No matching process makes tasklist exit non-zero on some builds.
+    // No matching process makes some builds exit non-zero. Nothing found is
+    // the safe answer either way: it lets a start proceed rather than
+    // blocking on a query that failed.
     return []
   }
 }
