@@ -1,0 +1,18 @@
+\documentclass[dvisvgm,border=2pt]{standalone}
+\input{_preamble}
+\begin{document}
+\begin{tikzpicture}[every node/.style={font=\scriptsize}]
+  \foreach \k in {1,...,5}
+    \draw[opacity=0.18] (0,0) ellipse ({\k*0.72} and {\k*0.3});
+  \fill[opacity=0.6] (0,0) circle (1.6pt);
+  \node[opacity=0.7,anchor=west] at (0.16,-0.04) {$\mathbf{w}^{*}$};
+  \draw[accent,line width=0.8pt,-{Stealth[length=5pt]}]
+    (-3.4,1.35) -- (-2.6,-1.24) -- (-1.9,1.05) -- (-1.35,-0.92)
+    -- (-0.95,0.72) -- (-0.66,-0.5) -- (-0.45,0.34);
+  \foreach \p in {(-3.4,1.35),(-2.6,-1.24),(-1.9,1.05),(-1.35,-0.92),(-0.95,0.72)}
+    \fill[accent] \p circle (1.3pt);
+  \node[opacity=0.6,align=left,anchor=west] at (1.1,1.25)
+    {the step is set by the\ steep direction; the flat\ one then takes $\kappa$ times\ as many of them};
+  \node[opacity=0.6,anchor=north] at (0,-1.9) {$\kappa=\lambda_{\max}/\lambda_{\min}$ of the Hessian};
+\end{tikzpicture}
+\end{document}

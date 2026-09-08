@@ -6,6 +6,27 @@ import { Card, ClickRow, Page, PageHeader, Section } from '@/components/ui/page'
 import { HANDBOOK_EN } from '@/handbook/en'
 import { HANDBOOK_RU } from '@/handbook/ru'
 import type { Block, Chapter, Topic } from '@/handbook/types'
+
+/**
+ * The figures, as raw SVG.
+ *
+ * Inlined rather than `<img src>` because they are drawn in `currentColor`
+ * and `hsl(var(--brand))`: an image in its own document cannot see this
+ * one's custom properties, and would come out black on black in the dark
+ * theme.
+ */
+const FIGURES = import.meta.glob('../handbook/figures/*.svg', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>
+
+function figure(id: string): string | undefined {
+  const key = Object.keys(FIGURES).find((k) => k.endsWith(`/${id}.svg`))
+  // The XML declaration is not valid inside an HTML document; the LaTeX
+  // source that follows it is a comment and stays.
+  return key ? FIGURES[key]!.replace(/<\?xml[^?]*\?>\s*/, '') : undefined
+}
 import { cn } from '@/lib/utils'
 import { useT, useUi } from '@/stores/uiStore'
 
@@ -61,7 +82,10 @@ export function Handbook(): JSX.Element {
           ))}
         </article>
 
-        <div className="mt-10 flex items-center justify-between gap-3 border-t border-border pt-4">
+        {/* Same column as the prose. Left to the page width these sat out
+            past the right edge of every line they follow, which reads as a
+            layout accident rather than as the end of the article. */}
+        <div className="mt-10 flex max-w-[68ch] items-center justify-between gap-3 border-t border-border pt-4">
           <Nav
             side="prev"
             entry={flat[at - 1]}
@@ -179,6 +203,21 @@ function BlockView({ block: b }: { block: Block }): JSX.Element {
           <Rich text={b.t} />
         </div>
       )
+    case 'fig': {
+      const svg = figure(b.id)
+      if (!svg) return <></>
+      return (
+        <figure className="mt-5">
+          <div
+            className="rounded-xl border border-border bg-card px-4 py-4 [&_svg]:block [&_svg]:h-auto [&_svg]:w-full"
+            dangerouslySetInnerHTML={{ __html: svg }}
+          />
+          <figcaption className="mt-2 text-xs text-muted-foreground">
+            <Rich text={b.caption} />
+          </figcaption>
+        </figure>
+      )
+    }
     case 'table':
       return (
         <div className="mt-4 overflow-x-auto">

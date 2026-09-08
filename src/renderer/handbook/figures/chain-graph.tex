@@ -1,0 +1,22 @@
+\documentclass[dvisvgm,border=2pt]{standalone}
+\input{_preamble}
+\begin{document}
+\begin{tikzpicture}[every node/.style={font=\scriptsize},node distance=16mm]
+  \node[circle,draw,opacity=0.35,inner sep=3pt] (x) {$a^{(l-1)}$};
+  \node[circle,draw,opacity=0.35,inner sep=3pt,right=of x] (z) {$z^{(l)}$};
+  \node[circle,draw,opacity=0.35,inner sep=3pt,right=of z] (a) {$a^{(l)}$};
+  \node[circle,draw,opacity=0.35,inner sep=3pt,right=of a] (L) {$L$};
+  \draw[opacity=0.4,-{Stealth[length=4pt]}] (x) -- node[above,opacity=0.6]{$W^{(l)}\cdot+b$} (z);
+  \draw[opacity=0.4,-{Stealth[length=4pt]}] (z) -- node[above,opacity=0.6]{$\varphi$} (a);
+  \draw[opacity=0.4,-{Stealth[length=4pt]}] (a) -- node[above,opacity=0.6]{$\ldots$} (L);
+  \node[opacity=0.6,anchor=east] at ($(x.west)+(-0.2,0)$) {forward};
+  \draw[accent,-{Stealth[length=4pt]}] ($(L.south)+(0,-0.35)$) -- ($(a.south)+(0,-0.35)$)
+    node[midway,below,accent]{$\delta^{(l)}$};
+  \draw[accent,-{Stealth[length=4pt]}] ($(a.south)+(0,-0.35)$) -- ($(z.south)+(0,-0.35)$)
+    node[midway,below,accent]{$\odot\,\varphi'$};
+  \draw[accent,-{Stealth[length=4pt]}] ($(z.south)+(0,-0.35)$) -- ($(x.south)+(0,-0.35)$)
+    node[midway,below,accent]{$W^{(l)\top}$};
+  \node[accent,anchor=north,align=center] at ($(a.south)+(0,-1.1)$)
+    {backward: one multiplication per layer, so the whole gradient\ costs about what the forward pass did};
+\end{tikzpicture}
+\end{document}

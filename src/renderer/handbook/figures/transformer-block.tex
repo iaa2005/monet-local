@@ -1,0 +1,23 @@
+\documentclass[dvisvgm,border=2pt]{standalone}
+\input{_preamble}
+\begin{document}
+\begin{tikzpicture}[node distance=6mm,every node/.style={font=\scriptsize}]
+  \node (in) {$x$};
+  \node[box,below=of in,minimum width=42mm] (n1) {RMSNorm};
+  \node[box,below=of n1,minimum width=42mm,draw=accent,text=accent] (at) {attention};
+  \node[circle,draw,opacity=0.4,below=of at,inner sep=1pt] (p1) {$+$};
+  \node[box,below=of p1,minimum width=42mm] (n2) {RMSNorm};
+  \node[box,below=of n2,minimum width=42mm] (ff) {FFN \; $\approx\frac23$ of the weights};
+  \node[circle,draw,opacity=0.4,below=of ff,inner sep=1pt] (p2) {$+$};
+  \node[below=of p2] (out) {$y$};
+  \foreach \a/\b in {in/n1,n1/at,at/p1,p1/n2,n2/ff,ff/p2,p2/out}
+    \draw[opacity=0.4,-{Stealth[length=4pt]}] (\a) -- (\b);
+  \draw[opacity=0.3,dashed,-{Stealth[length=4pt]}]
+    (in) -- ++(-3.1,0) |- (p1);
+  \draw[opacity=0.3,dashed,-{Stealth[length=4pt]}]
+    (p1) -- ++(-3.1,0) |- (p2);
+  \node[opacity=0.55,align=left,anchor=east] at ($(n2.west)+(-1.0,0)$) {residual:\ the road the\ gradient takes back};
+  \node[opacity=0.55,anchor=west] at ($(ff.east)+(0.6,-0.9)$) {$\times\,30\ldots100$ blocks};
+  \node[accent,anchor=west,align=left] at ($(at.east)+(0.6,0)$) {$O(n^2 d)$ in the\ sequence length};
+\end{tikzpicture}
+\end{document}

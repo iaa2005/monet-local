@@ -1,0 +1,20 @@
+\documentclass[dvisvgm,border=2pt]{standalone}
+\input{_preamble}
+\begin{document}
+\begin{tikzpicture}
+  \begin{axis}[width=9.2cm,height=5.2cm,
+      xlabel={$z$},ylabel={$\varphi(z)$},
+      xmin=-4,xmax=4,ymin=-0.6,ymax=2.6,
+      ytick={0,1,2},
+      legend style={at={(0.02,0.98)},anchor=north west}]
+    \addplot[domain=-4:4,samples=2,opacity=0.35]{0};
+    \addplot[domain=-4:4,samples=200,opacity=0.4]{1/(1+exp(-x))};
+    \addlegendentry{$\sigma(z)=\frac{1}{1+e^{-z}}$}
+    \addplot[domain=-4:4,samples=300,opacity=0.6]
+      {0.5*x*(1+tanh(sqrt(2/pi)*(x+0.044715*x^3)))};
+    \addlegendentry{GELU}
+    \addplot[domain=-4:4,samples=300,accent,line width=1.1pt]{max(0,x)};
+    \addlegendentry{$\mathrm{ReLU}(z)=\max(0,z)$}
+  \end{axis}
+\end{tikzpicture}
+\end{document}

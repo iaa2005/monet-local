@@ -301,3 +301,16 @@ The first half follows the path of "The Welch Labs Illustrated Guide to AI"
 (Stephen Welch, 2025). The prose is ours; the book is credited in the closing
 topic, along with the note that the measurements come from one machine and do
 not travel.
+
+Its figures are TikZ, not hand-written SVG. `figures/*.tex` are the source;
+`npm run figures` compiles them with `latex` → `dvisvgm --no-fonts` and
+commits the SVG beside each one, with the LaTeX embedded in it as a comment
+so the two cannot be separated. NOT part of `npm run build` — a TeX
+installation has no business being required to build this app.
+
+Two colours survive the compile and both are rewritten by the script: every
+neutral grey becomes `currentColor`, and magenta becomes `hsl(var(--brand))`.
+That is why the figures are inlined rather than `<img src>`: an image in its
+own document cannot see this one's custom properties, and would come out
+black on black in the dark theme. Anything a figure needs beyond those two
+colours, it gets from `opacity`.

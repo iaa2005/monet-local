@@ -39,6 +39,12 @@ export const HANDBOOK_EN: Chapter[] = [
             t: 'Geometrically $\\mathbf{w}^{\\top}\\mathbf{x} + b = 0$ is a hyperplane in $\\mathbb{R}^n$ and $\\mathbf{w}$ is its normal. The neuron answers one question: which side of the plane is this point on. Training rotates and shifts the plane until examples of different classes fall on different sides.',
           },
           {
+            k: 'fig',
+            id: 'separating-line',
+            caption:
+              'A neuron is a hyperplane. $\\mathbf{w}$ is perpendicular to it and $b$ slides it away from the origin.',
+          },
+          {
             k: 'p',
             t: 'The learning rule is literally one line. When the model gets an example $(\\mathbf{x}, d)$ wrong, the weights move towards the right answer:',
           },
@@ -50,6 +56,38 @@ export const HANDBOOK_EN: Chapter[] = [
           {
             k: 'p',
             t: 'And here is the limit that nearly ended the field in the sixties: one plane cuts space in two, and exclusive-or cannot be written that way — no straight line separates two diagonal corners of a square from the other two. The answer turned out not to be a better neuron but more of them, in layers.',
+          },
+          {
+            k: 'fig',
+            id: 'xor',
+            caption:
+              'Exclusive-or. Three attempts at a line, and none separates the circles from the squares, because no such line exists.',
+          },
+          {
+            k: 'h',
+            t: 'Why it converges at all',
+          },
+          {
+            k: 'p',
+            t: 'The rule does more than move in the right direction: for linearly separable data it provably stops after a finite number of mistakes. Suppose some $\\mathbf{w}^{*}$ with $\\|\\mathbf{w}^{*}\\|=1$ separates the data with margin',
+          },
+          {
+            k: 'math',
+            tex: '\\gamma = \\min_j d_j\\,\\mathbf{w}^{*\\top}\\mathbf{x}_j > 0',
+            note: 'the margin is the distance from the plane to the nearest point.',
+          },
+          {
+            k: 'p',
+            t: 'and let $R = \\max_j \\|\\mathbf{x}_j\\|$. Every mistake adds $d_j\\mathbf{x}_j$ to the weights, and that gives a bound from each side. The projection grows at least linearly: $\\mathbf{w}^{*\\top}\\mathbf{w}_{t+1} \\ge \\mathbf{w}^{*\\top}\\mathbf{w}_t + \\gamma$, so after $t$ mistakes it is at least $t\\gamma$. The norm grows more slowly: $\\|\\mathbf{w}_{t+1}\\|^2 \\le \\|\\mathbf{w}_t\\|^2 + R^2$, because the cross term $2d_j\\mathbf{w}_t^{\\top}\\mathbf{x}_j$ is negative — it was a mistake, after all. Hence $\\|\\mathbf{w}_t\\| \\le R\\sqrt{t}$.',
+          },
+          {
+            k: 'p',
+            t: 'A projection onto a unit vector cannot exceed the norm, so $t\\gamma \\le \\|\\mathbf{w}_t\\| \\le R\\sqrt{t}$. Square both sides and the bound contains neither the dimension nor the number of examples:',
+          },
+          {
+            k: 'math',
+            tex: 't \\le \\frac{R^{2}}{\\gamma^{2}}',
+            note: 'The wider the margin, the faster. As $\\gamma \\to 0$ the bound goes to infinity — which is exactly what exclusive-or does to it.',
           },
         ],
       },
@@ -75,6 +113,12 @@ export const HANDBOOK_EN: Chapter[] = [
             tex: '\\mathbf{w} \\leftarrow \\mathbf{w} - \\eta\\,\\nabla L(\\mathbf{w})',
           },
           {
+            k: 'fig',
+            id: 'descent',
+            caption:
+              'The steps shorten by themselves: $\\eta$ is constant and it is the slope that shrinks near the minimum.',
+          },
+          {
             k: 'p',
             t: 'Two facts make this practical. First, computing the gradient over all $m$ examples is expensive, so a random subset (a mini-batch) is used instead: the estimate is noisy but unbiased, and a noisy estimate is orders of magnitude cheaper than an exact one. That is stochastic gradient descent.',
           },
@@ -85,6 +129,50 @@ export const HANDBOOK_EN: Chapter[] = [
           {
             k: 'p',
             t: 'The learning rate $\\eta$ is the one genuinely temperamental knob. Too small and training does not converge in any reasonable time; too large and the steps overshoot and the loss diverges.',
+          },
+          {
+            k: 'h',
+            t: 'Where the limit on the step comes from',
+          },
+          {
+            k: 'p',
+            t: '"Too large" has an exact meaning. Expand the loss to second order around $\\mathbf{w}$ and substitute the step $-\\eta\\nabla L$:',
+          },
+          {
+            k: 'math',
+            tex: 'L(\\mathbf{w} - \\eta\\nabla L) \\approx L(\\mathbf{w}) - \\eta\\|\\nabla L\\|^{2} + \\tfrac{1}{2}\\eta^{2}\\,\\nabla L^{\\top} H \\nabla L',
+            note: '$H$ is the matrix of second derivatives, the Hessian.',
+          },
+          {
+            k: 'p',
+            t: 'The first term lowers the loss and the second raises it. Descent is guaranteed while $\\eta$ stays below twice the inverse of the largest eigenvalue of the Hessian: $\\eta < 2/\\lambda_{\\max}$. Above that the step overshoots the minimum by more than it started away from it.',
+          },
+          {
+            k: 'p',
+            t: 'And there is the real difficulty. The step is capped by the steepest direction while the distance to cover lies along the shallowest, so the number of steps is set by their ratio — the condition number $\\kappa = \\lambda_{\\max}/\\lambda_{\\min}$. At $\\kappa = 1000$ the descent converges honestly, and honestly takes a thousand steps for every useful one.',
+          },
+          {
+            k: 'fig',
+            id: 'contours',
+            caption:
+              'Elongated level sets: the step is set by the steep direction and the journey is along the shallow one. Hence the zig-zag.',
+          },
+          {
+            k: 'h',
+            t: 'What is done about it',
+          },
+          {
+            k: 'p',
+            t: 'Momentum accumulates speed along the consistent direction and damps the oscillation across it: $\\mathbf{v} \\leftarrow \\beta\\mathbf{v} + \\nabla L$, $\\mathbf{w} \\leftarrow \\mathbf{w} - \\eta\\mathbf{v}$. Adam goes further and gives every weight its own step, dividing the gradient by the root of its own averaged square:',
+          },
+          {
+            k: 'math',
+            tex: '\\mathbf{w} \\leftarrow \\mathbf{w} - \\eta\\,\\frac{\\hat{m}}{\\sqrt{\\hat{v}} + \\varepsilon}',
+            note: '$\\hat{m}$ and $\\hat{v}$ are smoothed first and second moments of the gradient.',
+          },
+          {
+            k: 'p',
+            t: 'The practical effect is that directions with small gradients get large steps and vice versa, so $\\kappa$ stops dictating the pace. The price is two extra copies of every weight in memory — one of the reasons training needs about three times the memory of inference.',
           },
         ],
       },
@@ -119,6 +207,20 @@ export const HANDBOOK_EN: Chapter[] = [
             t: 'It is a recurrence: knowing $\\delta$ at the output, walk backwards layer by layer. Each step is a multiplication by a transposed weight matrix — the same cost as going forward. Hence the rule of thumb that training costs roughly three times inference: forward, backward, update.',
           },
           {
+            k: 'fig',
+            id: 'chain-graph',
+            caption:
+              'One pass forward, one back. Backwards, each layer is a multiplication by $W^{\\top}$ and an element-wise one by $\\varphi^{\\prime}$.',
+          },
+          {
+            k: 'p',
+            t: 'It is worth counting exactly. The forward pass through layer $l$ multiplies an $n_l \\times n_{l-1}$ matrix by a vector: $2n_l n_{l-1}$ operations. The backward pass needs two such products — one by $W^{(l)\\top}$ for $\\delta^{(l-1)}$, and the outer product $\\delta^{(l)} a^{(l-1)\\top}$ for the gradient itself. So backward costs about twice forward, and the three together — forward, backward, update — about three times.',
+          },
+          {
+            k: 'p',
+            t: 'And that is for as many derivatives as there are weights. Computing them numerically would take $2N$ forward passes; at $N = 10^9$ that is the difference between a second and thirty years.',
+          },
+          {
             k: 'app',
             t: 'All of this is training. Monet Local does not train: the model is already trained, and only the forward pass runs on your machine. That is why memory here goes to weights and cache rather than to gradients and optimiser state, which during training would take three times as much again.',
           },
@@ -138,12 +240,34 @@ export const HANDBOOK_EN: Chapter[] = [
             t: "Today's standard is almost embarrassingly simple: ReLU, $\\varphi(z) = \\max(0, z)$, and its smoothed relatives (GELU, SiLU). Each ReLU neuron splits space in half and zeroes one side; a network of them carves the input into many regions and behaves linearly on each. A piecewise-linear function with enough pieces approximates anything.",
           },
           {
+            k: 'fig',
+            id: 'activations',
+            caption:
+              'ReLU and its smoothed relatives. All that is asked of a nonlinearity is that it not be a straight line.',
+          },
+          {
             k: 'p',
             t: 'The universal approximation theorem says one hidden layer is enough — but it says nothing about how wide, and the required width grows exponentially. Depth buys the same approximation with a polynomial number of parameters: each layer works not on the raw coordinates but on features the previous one built.',
           },
           {
             k: 'p',
+            t: 'The gain can be estimated on the back of an envelope. A ReLU network cuts the input into regions and is linear inside each. One layer of $n$ neurons gives $n$ hyperplanes, and $n$ hyperplanes in $\\mathbb{R}^{d}$ cut it into at most $\\sum_{i=0}^{d}\\binom{n}{i}$ pieces — a polynomial in $n$. With $L$ layers each one folds a space the previous already cut, and the region count grows like $O\\!\\left(n^{d(L-1)}\\right)$ — exponentially in depth. The same approximation for a polynomial number of parameters instead of an exponential one.',
+          },
+          {
+            k: 'p',
             t: 'The price of depth is the vanishing gradient: backpropagation multiplies derivatives, and thirty numbers below one multiplied together are zero. Residual connections, $a^{(l)} = a^{(l-1)} + F(a^{(l-1)})$, fix it by giving the gradient a straight road back — the derivative of a sum contains a $1$, which does not decay. That is why every transformer block adds its input back.',
+          },
+          {
+            k: 'p',
+            t: 'Formally: the derivative of the output with respect to the input is a product of layer Jacobians, and its norm is bounded by the product of theirs.',
+          },
+          {
+            k: 'math',
+            tex: '\\left\\|\\frac{\\partial a^{(L)}}{\\partial a^{(0)}}\\right\\| \\le \\prod_{l=1}^{L} \\left\\|W^{(l)}\\right\\| \\cdot \\left\\|\\operatorname{diag}\\varphi^{\\prime}\\right\\|',
+          },
+          {
+            k: 'p',
+            t: 'A product of $L$ numbers is unforgiving: at an average factor of $0.9$ and $L = 50$ it is $0.005$; at $1.1$, two hundred. The first means the lower layers do not learn, the second that training explodes. With a residual connection the Jacobian becomes $I + \\partial F/\\partial a$, and a product of those stays near one — because each of them contains a one.',
           },
         ],
       },
@@ -209,8 +333,51 @@ export const HANDBOOK_EN: Chapter[] = [
             t: 'Dividing by $\\sqrt{d_k}$ is not cosmetic. The dot product of two random vectors of dimension $d_k$ has variance of order $d_k$; without the scaling, at $d_k = 128$ the softmax inputs spread far enough that the distribution collapses onto a single element and the gradient through it goes to zero.',
           },
           {
+            k: 'h',
+            t: 'Where the root comes from',
+          },
+          {
+            k: 'p',
+            t: 'Take the coordinates of $q$ and $k$ to be independent, zero-mean and unit-variance. Then $q^{\\top}k = \\sum_{i=1}^{d_k} q_i k_i$ has mean zero and a variance that is $d_k$ identical terms added up:',
+          },
+          {
+            k: 'math',
+            tex: '\\operatorname{Var}\\!\\left(q^{\\top}k\\right) = \\sum_{i=1}^{d_k}\\operatorname{Var}(q_i k_i) = d_k',
+            note: 'so the typical scale of a softmax input is $\\sqrt{d_k}$.',
+          },
+          {
+            k: 'p',
+            t: 'Dividing by $\\sqrt{d_k}$ brings the variance back to one. Why that matters is visible in the derivative of the softmax: $\\partial p_i/\\partial z_j = p_i(\\delta_{ij} - p_j)$. When one $p_i$ is near one and the rest near zero, the whole matrix of derivatives vanishes and no gradient passes through attention. Unscaled, at $d_k = 128$ the inputs spread by about $\\pm 11$, which is far more than a softmax needs to collapse.',
+          },
+          {
             k: 'p',
             t: 'In a language model attention is causal: a token may only see earlier ones. That is done with a mask — entries of $QK^\\top$ above the diagonal are set to $-\\infty$, so the softmax makes them exactly zero. There are several heads (typically 8–64), each with its own $W_Q, W_K, W_V$: one tracks agreement, another syntax, another repetition.',
+          },
+          {
+            k: 'h',
+            t: 'What it costs',
+          },
+          {
+            k: 'p',
+            t: 'The matrix $QK^{\\top}$ is $n \\times n$ and each entry is a dot product of length $d_k$. Hence the cost, quadratic in the sequence length:',
+          },
+          {
+            k: 'math',
+            tex: 'O\\!\\left(n^{2} d\\right) \\text{ operations}, \\qquad O\\!\\left(n^{2}\\right) \\text{ memory for the matrix itself}',
+          },
+          {
+            k: 'p',
+            t: 'The second half is why flash attention exists: it computes the softmax in blocks and never holds the $n \\times n$ matrix at all, trading memory for re-reading. It is also why turning it on is a precondition for a quantised KV cache — the ordinary implementation simply does not support that combination.',
+          },
+          {
+            k: 'p',
+            t: 'The head count $h$ does not change the cost, since the dimension is split between them, $d = h \\cdot d_k$. It does change the memory, and there is a trick there: in grouped-query attention there are many query heads and few key/value heads, several queries sharing one pair. The cache shrinks by exactly the ratio of $h$ to $n_{kv}$ — and it is $n_{kv}$, not $h$, that appears in the cache formula later.',
+          },
+          {
+            k: 'fig',
+            id: 'attention-mask',
+            caption:
+              'The causal mask. Brighter is more weight; the upper triangle is zeroed before the softmax, not after it.',
           },
           {
             k: 'app',
@@ -228,12 +395,52 @@ export const HANDBOOK_EN: Chapter[] = [
             t: 'A transformer block has two halves, each wrapped in a residual connection with a normalisation:',
           },
           {
+            k: 'fig',
+            id: 'transformer-block',
+            caption:
+              'The whole block. Dashed lines are the residual connections: the road the gradient takes back without decaying.',
+          },
+          {
             k: 'math',
             tex: '\\begin{aligned} h &= x + \\operatorname{Attention}(\\operatorname{norm}(x)) \\\\ y &= h + \\operatorname{FFN}(\\operatorname{norm}(h)) \\end{aligned}',
           },
           {
             k: 'p',
             t: 'Attention mixes information between positions; the FFN — an ordinary two-layer network applied to each position separately — works on what attention brought. The FFN usually widens the dimension fourfold and narrows it back, and it accounts for roughly two thirds of all the weights in the model.',
+          },
+          {
+            k: 'h',
+            t: 'Normalisation',
+          },
+          {
+            k: 'p',
+            t: 'Almost everything now uses RMSNorm, a variant with no mean subtraction — scale only:',
+          },
+          {
+            k: 'math',
+            tex: '\\operatorname{RMSNorm}(x)_i = \\frac{x_i}{\\sqrt{\\frac{1}{d}\\sum_{j=1}^{d} x_j^{2} + \\varepsilon}}\\;\\gamma_i',
+            note: '$\\gamma$ is a learned vector of scales.',
+          },
+          {
+            k: 'p',
+            t: 'Its job is to hold the scale of the activations steady with depth. Without it the residual connections, which keep adding, inflate the norm, and by layer fifty the softmax degenerates again — for the same reason it does without the $\\sqrt{d_k}$.',
+          },
+          {
+            k: 'h',
+            t: 'How many parameters',
+          },
+          {
+            k: 'p',
+            t: 'A model can be recounted from its GGUF header on a napkin. Per block: $4d^{2}$ for attention (four $d \\times d$ matrices — $W_Q, W_K, W_V$ and the output one) and about $3 \\cdot d \\cdot d_{\\text{ff}}$ for the FFN, three rather than two because modern FFNs are gated (SwiGLU). With the usual $d_{\\text{ff}} = 4d$:',
+          },
+          {
+            k: 'math',
+            tex: 'P \\approx L\\left(4d^{2} + 12d^{2}\\right) + 2Vd = 16Ld^{2} + 2Vd',
+            note: '$L$ blocks, vocabulary $V$.',
+          },
+          {
+            k: 'p',
+            t: 'Check it on the 27B: at $L = 65$ and $d = 5120$ the first term is $16 \\cdot 65 \\cdot 5120^{2} \\approx 27.3$ billion. It agrees — and it also shows that three quarters of that sits in the FFN rather than in attention.',
           },
           {
             k: 'p',
@@ -264,6 +471,12 @@ export const HANDBOOK_EN: Chapter[] = [
             t: 'In an ordinary ("dense") model every token passes through every weight. A mixture of experts replaces one FFN with $N$ parallel FFNs — experts — plus a small learned router that picks $k$ of them per token, usually 2 of 8 or 8 of 128.',
           },
           {
+            k: 'fig',
+            id: 'moe-routing',
+            caption:
+              'The router picks two experts of eight. Two are computed; all eight have to be in memory.',
+          },
+          {
             k: 'math',
             tex: 'y = \\sum_{i \\in \\operatorname{top}_k(g(x))} g_i(x)\\, \\operatorname{FFN}_i(x)',
             note: '$g$ is the router and $g_i$ the weight of the chosen expert.',
@@ -271,6 +484,39 @@ export const HANDBOOK_EN: Chapter[] = [
           {
             k: 'p',
             t: 'This separates two quantities that were the same thing in a dense model: total parameters and parameters active per token. A model can hold 27 billion weights and compute like a three-billion one. Quality tracks the total; compute cost tracks the active count.',
+          },
+          {
+            k: 'h',
+            t: 'Formally',
+          },
+          {
+            k: 'p',
+            t: 'With $N$ experts per layer and $k$ active, the FFN parameters of that layer and its active parameters differ by exactly $N/k$:',
+          },
+          {
+            k: 'math',
+            tex: 'P_{\\text{total}} \\propto N, \\qquad P_{\\text{active}} \\propto k, \\qquad \\frac{P_{\\text{total}}}{P_{\\text{active}}} = \\frac{N}{k}',
+          },
+          {
+            k: 'p',
+            t: 'Memory follows the first, speed the second. A model with $N = 128$ and $k = 8$ occupies what sixteen equivalent dense models would and computes like one of them.',
+          },
+          {
+            k: 'h',
+            t: 'Balancing',
+          },
+          {
+            k: 'p',
+            t: 'Routers tend to collapse: an expert that happens to get more examples early trains faster, then wins more often, and in the limit two of a hundred and twenty-eight do the work. The cure is an auxiliary loss penalising the imbalance:',
+          },
+          {
+            k: 'math',
+            tex: 'L_{\\text{aux}} = \\alpha N \\sum_{i=1}^{N} f_i\\, \\bar{p}_i',
+            note: '$f_i$ is the fraction of tokens routed to expert $i$, $\\bar{p}_i$ the mean probability the router gave it.',
+          },
+          {
+            k: 'p',
+            t: 'The product is smallest when the load is even. None of this affects inference — but it explains why a trained MoE really does need all its experts, and why the unused ones cannot be dropped.',
           },
           {
             k: 'p',
@@ -305,6 +551,12 @@ export const HANDBOOK_EN: Chapter[] = [
             t: 'The idea is simple. Weights within a small block (usually 32 of them) are similar in magnitude. Store them not individually but through a shared scale: take the largest absolute value, divide by it, round to a few bits, and keep the integers plus one scale per block.',
           },
           {
+            k: 'fig',
+            id: 'quant-block',
+            caption:
+              'A block of weights becomes integers plus one scale. Hence the fractional bits per weight.',
+          },
+          {
             k: 'math',
             tex: 's = \\frac{\\max_i |w_i|}{2^{b-1}-1}, \\qquad q_i = \\operatorname{round}\\!\\left(\\frac{w_i}{s}\\right), \\qquad \\hat{w}_i = s\\,q_i',
             note: '$b$ is bits per weight; the scale $s$ is stored as f16.',
@@ -328,6 +580,27 @@ export const HANDBOOK_EN: Chapter[] = [
           {
             k: 'p',
             t: 'Below four bits quality falls quickly and non-linearly. The general rule, and it holds up under measurement: a bigger model at a smaller quant beats a smaller model at a bigger one — 27B at Q4 is stronger than 8B at Q8 for about the same memory.',
+          },
+          {
+            k: 'h',
+            t: 'How much is actually lost',
+          },
+          {
+            k: 'p',
+            t: 'Rounding to a grid of step $s$ leaves an error uniform on $[-s/2, s/2]$, with variance $s^{2}/12$. At $b$ bits over a block whose maximum is $w_{\\max}$ the step is $s = 2w_{\\max}/(2^{b}-1)$, so',
+          },
+          {
+            k: 'math',
+            tex: '\\operatorname{Var}(\\varepsilon) = \\frac{s^{2}}{12} = \\frac{w_{\\max}^{2}}{3\\left(2^{b}-1\\right)^{2}} \\;\\propto\\; 4^{-b}',
+            note: 'each extra bit divides the error variance by four.',
+          },
+          {
+            k: 'p',
+            t: 'Two things follow. The noise falls exponentially in the bit count, which is why 8 to 6 is imperceptible and 4 to 3 is a cliff — the variance falls by the same factor each time, but relative to the signal it is growing. And the error is proportional to the block maximum, that is, to one outlier among thirty-two weights. That is precisely what K-quants address: their scale is two-level, one per super-block and a correction per sub-block, so an outlier spoils sixteen weights instead of the lot.',
+          },
+          {
+            k: 'p',
+            t: 'A third, less obvious point: the errors of different weights are independent, so in a dot product of length $d$ they add as $\\sqrt{d}$ while the signal adds as $d$. The signal-to-noise ratio improves with dimension, which is part of why large models quantise more gracefully than small ones.',
           },
           {
             k: 'app',
@@ -364,6 +637,12 @@ export const HANDBOOK_EN: Chapter[] = [
           {
             k: 'p',
             t: 'At the advertised maximum of 262,144 tokens that is $64 \\text{ KiB} \\cdot 262144 = 16$ GiB of cache, on top of sixteen gigabytes of weights. Which is why the context slider in this program sits next to a memory estimate rather than on its own.',
+          },
+          {
+            k: 'fig',
+            id: 'kv-growth',
+            caption:
+              'The weights are a flat line and the cache a sloped one. Where their sum meets the machine\u2019s ceiling is the context limit.',
           },
           {
             k: 'p',
@@ -407,6 +686,12 @@ export const HANDBOOK_EN: Chapter[] = [
             t: 'Integrated graphics is the trap. A Radeon 780M has no memory of its own: its "VRAM" is a slice of the same system RAM. A gigabyte given to the GPU is a gigabyte taken from the system, not extra capacity — and its ceiling is still its own, and usually lower.',
           },
           {
+            k: 'fig',
+            id: 'two-ceilings',
+            caption:
+              'One configuration against two limits. RAM has room to spare; the GPU refuses.',
+          },
+          {
             k: 'app',
             t: 'The Server screen draws two meters, not one. A "will not fit" verdict above a comfortable-looking RAM bar means exactly that: RAM had room, and the refusal came from the second ceiling. The UMA badge beside the memory figure means the memory is shared.',
           },
@@ -444,6 +729,33 @@ export const HANDBOOK_EN: Chapter[] = [
             t: 'Dual-channel DDR5-5600 gives $2 \\cdot 8 \\cdot 5.6 \\cdot 10^9 \\approx 89.6$ GB/s. For a 16 GiB model that is $89.6 / 17.2 \\approx 5.2$ tokens per second at the theoretical limit. The 4.31 tokens per second measured on this machine is 83% of it — meaning there is nothing left to gain from settings.',
           },
           {
+            k: 'h',
+            t: 'The same conclusion formally: the roofline',
+          },
+          {
+            k: 'p',
+            t: 'Let $I$ be the arithmetic intensity — operations per byte read. Attainable performance is capped by two things at once: what the processor can compute, and what memory can deliver.',
+          },
+          {
+            k: 'math',
+            tex: 'F(I) = \\min\\left(F_{\\max},\\; I \\cdot B\\right)',
+            note: '$F_{\\max}$ is peak arithmetic, $B$ memory bandwidth.',
+          },
+          {
+            k: 'p',
+            t: 'The ridge at $I^{*} = F_{\\max}/B$ divides the regimes. Generation does about two multiply-adds per byte of weights read, so $I \\approx 0.25$ — two orders of magnitude to the left of the ridge. Nothing on the right applies to it: not cores, not AVX-512, not matrix extensions.',
+          },
+          {
+            k: 'fig',
+            id: 'roofline',
+            caption:
+              'Prompt processing lives to the right of the ridge, generation far to the left. Two different problems on one machine.',
+          },
+          {
+            k: 'p',
+            t: 'Note that $B$ here is not the number on the box: real bandwidth is usually 70–85% of it. The measured 4.31 tokens per second against a theoretical 5.2 is 83% — memory giving everything it has.',
+          },
+          {
             k: 'p',
             t: 'The consequence is worth learning before anything else: more RAM buys capacity, not speed. Speed comes only from smaller weights — a smaller quant or a smaller model. Going from 32 to 64 gigabytes will let you run a longer context; it will not add tokens per second.',
           },
@@ -465,6 +777,12 @@ export const HANDBOOK_EN: Chapter[] = [
           {
             k: 'p',
             t: 'Every measurement has two numbers, and it is worth not confusing them.',
+          },
+          {
+            k: 'fig',
+            id: 'prompt-vs-gen',
+            caption:
+              'The prompt goes through as one batch; the answer, one token per pass, reading all the weights again each time.',
           },
           {
             k: 'p',
@@ -545,8 +863,22 @@ export const HANDBOOK_EN: Chapter[] = [
             t: 'As $T \\to 0$ the distribution collapses to greedy; at $T = 1$ it is untouched; above 1 it flattens and unlikely tokens come into play. For code and factual answers 0.1–0.4; for free text 0.7–1.0.',
           },
           {
+            k: 'fig',
+            id: 'temperature',
+            caption:
+              'The same logits at three temperatures. On the left the choice is nearly made; on the right the tail comes into play.',
+          },
+          {
             k: 'p',
             t: 'Top-k keeps the $k$ most likely tokens and zeroes the rest. Top-p (nucleus sampling) is more adaptive: it takes the smallest set of tokens whose probabilities reach $p$. On a confident step that may be two tokens; on an uncertain one, a hundred. Usually $p = 0.9\\text{–}0.95$.',
+          },
+          {
+            k: 'p',
+            t: 'It helps to think in entropy, $H(p) = -\\sum_i p_i \\log p_i$ — a measure of how unsure the model is. Temperature raises it monotonically; top-p caps it by cutting the tail. The difference is that temperature acts identically at every step while top-p adapts: where the model is confident the nucleus is two tokens and the cut changes nothing, and where it is not the nucleus is a hundred and only the genuinely improbable is removed.',
+          },
+          {
+            k: 'p',
+            t: 'Hence the practical rule: a moderate temperature together with top-p is steadier than one high temperature. The first makes the text alive without ever letting through a token the model considered impossible.',
           },
           {
             k: 'app',

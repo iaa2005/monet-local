@@ -26,6 +26,13 @@ export type Block =
    */
   | { k: 'app'; t: string }
   | { k: 'table'; head: string[]; rows: string[][] }
+  /**
+   * A figure, by the name of its file in `figures/`. Drawn in TikZ and
+   * compiled to SVG by `npm run figures`; the `.tex` beside each one is the
+   * source, and it is embedded in the SVG as a comment so the two cannot be
+   * separated.
+   */
+  | { k: 'fig'; id: string; caption: string }
 
 export interface Topic {
   id: string

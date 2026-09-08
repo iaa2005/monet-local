@@ -1,0 +1,18 @@
+\documentclass[dvisvgm,border=2pt]{standalone}
+\input{_preamble}
+\begin{document}
+\begin{tikzpicture}
+  \begin{axis}[width=9.2cm,height=5.4cm,
+      xlabel={$w$},ylabel={$L(w)$},
+      xmin=-0.3,xmax=6.6,ymin=0,ymax=13,
+      ytick=\empty,xtick={3.2},xticklabels={$w^{*}$}]
+    \addplot[domain=-0.3:6.6,samples=200,opacity=0.45]{0.9*(x-3.2)^2+1};
+    % w <- w - eta L'(w), eta = 0.28, L' = 1.8 (w - 3.2)
+    \addplot[accent,line width=0.7pt,dashed,mark=*,mark options={solid,accent,scale=0.6}]
+      coordinates {(0.35,7.9)(1.15,4.7)(1.66,3.15)(1.98,2.29)(2.19,1.9)(2.32,1.68)(2.4,1.58)};
+    \node[accent,anchor=south west,font=\scriptsize] at (axis cs:0.35,7.9) {start};
+    \node[opacity=0.6,anchor=south,font=\scriptsize,align=center]
+      at (axis cs:5.0,7.2) {steps shrink on their own:\ the slope does};
+  \end{axis}
+\end{tikzpicture}
+\end{document}
