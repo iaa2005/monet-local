@@ -327,10 +327,18 @@
   outline-offset: 4px;
   border-radius: var(--radius-sm);
 }
+/* Two tones, split at the thumb. --muted against a white card was barely a
+   line; the filled half in the brand colour says where the value sits before
+   the number is read, and the rest is an alpha of the text colour so it is
+   equally visible in both themes. */
 .ctx-range::-webkit-slider-runnable-track {
   height: 6px;
   border-radius: 9999px;
-  background: var(--muted);
+  background: linear-gradient(
+    to right,
+    hsl(var(--brand)) 0 var(--ctx-fill, 0%),
+    hsl(var(--text-000) / 0.22) var(--ctx-fill, 0%) 100%
+  );
 }
 .ctx-range::-webkit-slider-thumb {
   appearance: none;
@@ -350,7 +358,12 @@
 .ctx-range::-moz-range-track {
   height: 6px;
   border-radius: 9999px;
-  background: var(--muted);
+  background: hsl(var(--text-000) / 0.22);
+}
+.ctx-range::-moz-range-progress {
+  height: 6px;
+  border-radius: 9999px;
+  background: hsl(var(--brand));
 }
 .ctx-range::-moz-range-thumb {
   height: 16px;

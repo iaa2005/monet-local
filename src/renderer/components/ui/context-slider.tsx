@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { tokens } from '@shared/format.js'
 import { cn } from '@/lib/utils'
 
@@ -68,6 +68,7 @@ export function ContextSlider({
   }
 
   const shown = marks.filter((m) => m >= MIN && m <= top)
+  const position = toPosition(current, MIN, top)
 
   return (
     <div className="w-full min-w-0">
@@ -77,9 +78,14 @@ export function ContextSlider({
           min={0}
           max={STEPS}
           step={1}
-          value={toPosition(current, MIN, top)}
+          value={position}
           onChange={(e) =>
             onChange(fromPosition(Number(e.target.value), MIN, top))
+          }
+          // Chromium cannot two-tone a track on its own; the split point is
+          // handed to the stylesheet as a custom property.
+          style={
+            { '--ctx-fill': `${(position / STEPS) * 100}%` } as CSSProperties
           }
           className="ctx-range h-9 min-w-0 flex-1"
           aria-label="context length"
