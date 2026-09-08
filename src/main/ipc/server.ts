@@ -1,6 +1,7 @@
 import { totalmem } from 'node:os'
 import { app, ipcMain } from 'electron'
 import { estimate } from '@shared/estimator.js'
+import { publicModels } from '@shared/public-models.js'
 import { buildArgs, previewCommand } from '@shared/flags/build.js'
 import type { Hardware, Profile } from '@shared/flags/types.js'
 import { getMainWindow } from '../app/main-window.js'
@@ -24,38 +25,27 @@ const ROUTER_PORT = 17172
 let router: Router | null = null
 let gateway: Gateway | null = null
 
-/**
- * The library as a client sees it: every model, its status, and whether this
- * machine could run it with the profile it is assigned. A client that knows
- * a model will not fit can say so instead of offering it.
- */
-function publicModels(): unknown[] {
-  const status = statusCache
-  const byId = new Map((status?.models ?? []).map((m) => [m.id, m.status]))
-  return models().map((m) => {
-    const values = profileFor(m.id).values
-    const verdict = estimate({
-      fileBytes: m.sizeBytes,
-      ...(m.geometry ? { geometry: m.geometry } : {}),
-      profile: values,
-      hardware: hardware(),
-    })
-    return {
+/** The library as a client sees it — shape lives in shared/public-models. */
+function publicModelList(): unknown[] {
+  const byId = new Map(
+    (statusCache?.models ?? []).map((m) => [m.id, m.status] as const),
+  )
+  return publicModels(
+    models().map((m) => ({
       id: m.id,
-      object: 'model',
-      owned_by: 'monet-local',
-      status: byId.get(m.id) ?? 'unloaded',
-      display_name: m.displayName,
+      displayName: m.displayName,
       architecture: m.architecture,
-      quantisation: m.quant,
-      size_bytes: m.sizeBytes,
-      context_max: m.contextMax ?? null,
-      context_configured: values['ctxSize'] ?? null,
-      modalities: m.mmprojPath ? ['text', 'image'] : ['text'],
+      quant: m.quant,
+      sizeBytes: m.sizeBytes,
+      ...(m.contextMax !== undefined ? { contextMax: m.contextMax } : {}),
+      ...(m.geometry ? { geometry: m.geometry } : {}),
+      ...(m.mmprojPath ? { mmprojPath: m.mmprojPath } : {}),
       moe: m.moe,
-      verdict: verdict.level,
-    }
-  })
+    })),
+    byId,
+    (id) => profileFor(id).values,
+    hardware(),
+  )
 }
 
 /** Kept fresh by the router's own change events, for the SSE stream. */
@@ -131,7 +121,7 @@ export function registerServerIpc(): void {
     const settings = readSettings()
     gateway ??= new Gateway(settings.port, {
       router: () => router,
-      models: () => publicModels(),
+      models: () => publicModelList(),
       info: () => ({
         name: 'Monet Local',
         version: app.getVersion(),

@@ -10,6 +10,7 @@ const { Router } = await import('./router.js')
 const { Gateway } = await import('./gateway.js')
 const { ensureDirs } = await import('../app/settings-store.js')
 const { scanFolders } = await import('../models/library.js')
+const { publicModels } = await import('@shared/public-models.js')
 
 const LLAMA = 'D:/Colibri/llamacpp/llama-server.exe'
 const MODELS = 'D:/Colibri/models'
@@ -36,10 +37,12 @@ describe.skipIf(!enabled)('end to end, through the gateway', () => {
   const router = new Router(LLAMA, ROUTER_PORT)
   let gateway: InstanceType<typeof Gateway>
   let modelId = ''
+  let library: Awaited<ReturnType<typeof scanFolders>>['models'] = []
 
   beforeAll(async () => {
     ensureDirs()
     const models = scanFolders([MODELS]).models
+    library = models
     const model = models.find((m) => m.id.includes('q4_k_m')) ?? models[0]!
     modelId = model.id
 
@@ -71,7 +74,25 @@ describe.skipIf(!enabled)('end to end, through the gateway', () => {
 
     gateway = new Gateway(GATEWAY_PORT, {
       router: () => router,
-      models: () => [],
+      // The real payload, through the real builder: this is the contract
+      // Code Monet reads, so a stub here would test nothing.
+      models: () =>
+        publicModels(
+          library.map((m) => ({
+            id: m.id,
+            displayName: m.displayName,
+            architecture: m.architecture,
+            quant: m.quant,
+            sizeBytes: m.sizeBytes,
+            ...(m.contextMax !== undefined ? { contextMax: m.contextMax } : {}),
+            ...(m.geometry ? { geometry: m.geometry } : {}),
+            ...(m.mmprojPath ? { mmprojPath: m.mmprojPath } : {}),
+            moe: m.moe,
+          })),
+          new Map(),
+          () => ({ ctxSize: 4096, noRepack: true }),
+          { totalRamBytes: 32e9, devices: [] },
+        ),
       info: () => ({ name: 'Monet Local', capabilities: { anthropic: true } }),
       apiKey: () => undefined,
       networkAccess: () => false,
@@ -170,4 +191,29 @@ describe.skipIf(!enabled)('end to end, through the gateway', () => {
     }
     expect(reads).toBeGreaterThan(1)
   }, 180_000)
+
+  it('publishes the fields Code Monet reads off a model', async () => {
+    // The contract between the two apps. Code Monet fills a model's context
+    // window, its modalities and its display name from exactly these names;
+    // renaming one here would silently give every model over there a guessed
+    // context and no vision.
+    const body = (await (
+      await fetch(url('/monet-local/v1/models'))
+    ).json()) as { data: Record<string, unknown>[] }
+
+    const model = body.data.find((m) => m['id'] === modelId)
+    expect(model).toBeDefined()
+    for (const field of [
+      'id',
+      'status',
+      'display_name',
+      'context_max',
+      'context_configured',
+      'modalities',
+      'verdict',
+    ]) {
+      expect(model, field).toHaveProperty(field)
+    }
+    expect(model!['modalities']).toContain('text')
+  })
 })
