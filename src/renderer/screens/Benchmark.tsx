@@ -145,7 +145,7 @@ export function Benchmark(): JSX.Element {
           a detail. */}
       {model && profile ? (
         <div className="mt-5">
-          <pre className="overflow-x-auto rounded-xl border border-border bg-card p-4 text-xs leading-relaxed">
+          <pre className="whitespace-pre-wrap [overflow-wrap:anywhere] rounded-xl border border-border bg-card p-4 text-xs leading-relaxed">
             llama-bench{' '}
             {buildBenchArgs(model.path, profile.values).join(' ')}
           </pre>
@@ -162,15 +162,20 @@ export function Benchmark(): JSX.Element {
 
       {model ? (
         <div className="mt-6 grid grid-cols-3 gap-4">
-          {/* The number that makes a measurement legible: on a dense model
+          {/* The number that makes a measurement legible: on a DENSE model
               generation is pinned to memory bandwidth, so a result close to
-              this is the hardware, not the profile. */}
+              this is the hardware, not the configuration.
+              On a MoE it is not a ceiling at all — only the active experts
+              are read per token, so the measurement beats it and should.
+              Saying which of the two this is costs one line and stops the
+              figure from looking like a broken one. */}
           <div className="rounded-xl border border-border bg-card px-4 py-3">
             <Stat
               label={t('bench.ceiling')}
               value={bandwidthCeiling(model.sizeBytes, DDR5_5600_DUAL).toFixed(1)}
               unit="tok/s"
-              hint="DDR5-5600 ×2"
+              hint={model.moe ? t('bench.ceilingMoe') : t('bench.ceilingDense')}
+              tone={model.moe ? 'warn' : undefined}
             />
           </div>
           <div className="rounded-xl border border-border bg-card px-4 py-3">

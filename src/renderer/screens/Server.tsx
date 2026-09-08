@@ -531,7 +531,7 @@ export function Server(): JSX.Element {
             </h3>
             {/* What the preview shows is what launches: both come out of
                 buildArgs, so they cannot drift apart. */}
-            <pre className="overflow-x-auto rounded-xl border border-border bg-card p-4 text-xs leading-relaxed">
+            <pre className="whitespace-pre-wrap [overflow-wrap:anywhere] rounded-xl border border-border bg-card p-4 text-xs leading-relaxed">
               {command}
             </pre>
           </div>

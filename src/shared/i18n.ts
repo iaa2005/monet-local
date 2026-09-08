@@ -210,6 +210,9 @@ export const en = {
   'bench.ceiling': 'Memory bandwidth allows about',
   'bench.ceilingWhy':
     'A dense model reads every weight for every token, so generation cannot go faster than your memory. More RAM buys capacity, not speed — a smaller quantisation is the only lever.',
+  'bench.ceilingDense': 'dense model · DDR5-5600 ×2',
+  'bench.ceilingMoe':
+    'not a ceiling here — a MoE reads only the active experts per token',
   'bench.ignored': 'Not applied by llama-bench:',
   'bench.noBench': 'This runtime ships no llama-bench.',
   'bench.empty': 'Nothing measured yet.',
@@ -434,6 +437,9 @@ export const ru: Record<StringKey, string> = {
   'bench.ceiling': 'Полоса памяти позволяет около',
   'bench.ceilingWhy':
     'Плотная модель читает все веса на каждый токен, поэтому генерация не может обгонять память. Больше RAM даёт вместимость, а не скорость — единственный рычаг здесь квант поменьше.',
+  'bench.ceilingDense': 'плотная модель · DDR5-5600 ×2',
+  'bench.ceilingMoe':
+    'здесь не потолок — MoE читает только активных экспертов на токен',
   'bench.ignored': 'llama-bench не применил:',
   'bench.noBench': 'В этом рантайме нет llama-bench.',
   'bench.empty': 'Пока ничего не измерено.',
