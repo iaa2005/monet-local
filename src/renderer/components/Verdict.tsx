@@ -26,19 +26,18 @@ interface Budget {
 }
 
 /**
- * Is the sticky element currently stuck?
+ * Is the card out of sight?
  *
- * A sentinel just above it, watched inside the element that actually
- * scrolls. `position: sticky` gives no event of its own, and the window is
- * the wrong thing to watch here — the page scrolls inside `<main>`, so an
- * observer rooted at the viewport would answer for the wrong box.
+ * Watched inside the element that actually scrolls: the page scrolls in
+ * `<main>`, so an observer rooted at the viewport would answer for the wrong
+ * box.
  */
-function useStuck(): [React.RefObject<HTMLDivElement | null>, boolean] {
-  const sentinel = useRef<HTMLDivElement>(null)
-  const [stuck, setStuck] = useState(false)
+function useOutOfView(): [React.RefObject<HTMLDivElement | null>, boolean] {
+  const card = useRef<HTMLDivElement>(null)
+  const [away, setAway] = useState(false)
 
   useEffect(() => {
-    const el = sentinel.current
+    const el = card.current
     if (!el) return
     let root: HTMLElement | null = el.parentElement
     while (root) {
@@ -47,14 +46,14 @@ function useStuck(): [React.RefObject<HTMLDivElement | null>, boolean] {
       root = root.parentElement
     }
     const io = new IntersectionObserver(
-      ([entry]) => setStuck(!(entry?.isIntersecting ?? true)),
+      ([entry]) => setAway(!(entry?.isIntersecting ?? true)),
       { root },
     )
     io.observe(el)
     return () => io.disconnect()
   }, [])
 
-  return [sentinel, stuck]
+  return [card, away]
 }
 
 /**
@@ -79,7 +78,7 @@ export function Verdict({
   onApply?: (fix: Estimate['suggestions'][number]) => void
 }): JSX.Element {
   const t = useT()
-  const [sentinel, stuck] = useStuck()
+  const [card, away] = useOutOfView()
   const tone = e.level === 'fits' ? 'ok' : e.level === 'tight' ? 'warn' : 'bad'
   const Icon =
     e.level === 'fits' ? CheckCircle2 : e.level === 'tight' ? AlertTriangle : XCircle
@@ -124,107 +123,116 @@ export function Verdict({
 
   return (
     <>
-      <div ref={sentinel} aria-hidden className="h-px" />
+      {/* A SECOND, compact copy — not this card collapsed.
+          Collapsing it in place changed the page's height, which moved the
+          scroll, which changed what was on screen, which collapsed or
+          expanded it again: the page shook. Nothing in the flow moves now.
+          The rail is zero-height and the bar hangs off it, so the form
+          below is laid out as if neither existed. */}
+      <div className="sticky top-0 z-30 h-0">
+        {away ? (
+          <div
+            className={cn(
+              'absolute inset-x-0 top-0 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border bg-card px-4 py-2.5 shadow-lg',
+              tone === 'ok' && 'border-green-border',
+              tone === 'warn' && 'border-warn/40',
+              tone === 'bad' && 'border-red-border',
+            )}
+          >
+            <Icon
+              className={cn(
+                'size-4 shrink-0',
+                tone === 'ok' && 'text-green-text',
+                tone === 'warn' && 'text-warn',
+                tone === 'bad' && 'text-red-text',
+              )}
+            />
+            <span className="font-display text-sm font-semibold">
+              {t(`verdict.${e.level}` as StringKey)}
+            </span>
+            {budgets.map((b) => (
+              <Inline key={b.label} budget={b} />
+            ))}
+          </div>
+        ) : null}
+      </div>
+
       <div
+        ref={card}
         className={cn(
-          'sticky top-0 z-30 mt-5 rounded-xl border',
-          stuck ? 'px-4 py-2.5' : 'p-5',
-          tone === 'ok' && 'border-green-border',
-          tone === 'warn' && 'border-warn/40',
-          tone === 'bad' && 'border-red-border',
-          // The tone wash is translucent by design. Stuck, it has the form
-          // scrolling underneath it, so it swaps for an opaque card rather
-          // than layering — two `bg-*` utilities on one element are settled
-          // by the order they happen to land in the stylesheet, not by the
-          // order they are written here.
-          !stuck && tone === 'ok' && 'bg-green-bg/60',
-          !stuck && tone === 'warn' && 'bg-warn/10',
-          !stuck && tone === 'bad' && 'bg-red-bg/60',
-          stuck && 'bg-card shadow-lg',
+          'mt-5 rounded-xl border p-5',
+          tone === 'ok' && 'border-green-border bg-green-bg/60',
+          tone === 'warn' && 'border-warn/40 bg-warn/10',
+          tone === 'bad' && 'border-red-border bg-red-bg/60',
         )}
       >
-        <div className={cn('flex items-center gap-2', stuck && 'flex-wrap gap-x-4')}>
+        <div className="flex items-center gap-2">
           <Icon
             className={cn(
-              'shrink-0',
-              stuck ? 'size-4' : 'size-5',
+              'size-5 shrink-0',
               tone === 'ok' && 'text-green-text',
               tone === 'warn' && 'text-warn',
               tone === 'bad' && 'text-red-text',
             )}
           />
-          <span
-            className={cn(
-              'font-display font-semibold',
-              stuck ? 'text-sm' : 'text-lg',
-            )}
-          >
+          <span className="font-display text-lg font-semibold">
             {t(`verdict.${e.level}` as StringKey)}
           </span>
-
-          {/* Stuck, the meters come up onto the one line that is left. */}
-          {stuck
-            ? budgets.map((b) => <Inline key={b.label} budget={b} />)
-            : null}
         </div>
 
-        {stuck ? null : (
-          <>
-            {/* What the configuration costs, once. The ceilings it is
-                measured against are on the meters below, so no number
-                appears twice. */}
-            <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
-              <Stat label={t('verdict.total')} value={bytes(e.totalBytes)} />
-              <Stat label={t('verdict.weights')} value={bytes(e.weightsBytes)} />
-              <Stat label={t('verdict.kv')} value={bytes(e.kvBytes)} />
-              <Stat label={t('verdict.compute')} value={bytes(e.computeBytes)} />
-            </div>
+        {/* What the configuration costs, once. The ceilings it is
+            measured against are on the meters below, so no number
+            appears twice. */}
+        <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
+          <Stat label={t('verdict.total')} value={bytes(e.totalBytes)} />
+          <Stat label={t('verdict.weights')} value={bytes(e.weightsBytes)} />
+          <Stat label={t('verdict.kv')} value={bytes(e.kvBytes)} />
+          <Stat label={t('verdict.compute')} value={bytes(e.computeBytes)} />
+        </div>
 
-            {budgets.map((b) => (
-              <Meter key={b.label} budget={b} />
+        {budgets.map((b) => (
+          <Meter key={b.label} budget={b} />
+        ))}
+
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+          <Key className={WEIGHTS}>{t('verdict.weights')}</Key>
+          <Key className={KV}>{t('verdict.kv')}</Key>
+          <Key className={COMPUTE}>{t('verdict.compute')}</Key>
+        </div>
+
+        {e.findings.length ? (
+          <ul className="mt-4 space-y-1 text-sm">
+            {e.findings.map((f, i) => (
+              <li key={`${f.code}-${i}`} className="flex gap-2">
+                <span className="text-muted-foreground">·</span>
+                <span>
+                  {t(`finding.${f.code}` as StringKey)}
+                  {f.bytes !== undefined ? <b> {bytes(f.bytes)}</b> : null}
+                  {f.device ? ` (${f.device})` : ''}
+                </span>
+              </li>
             ))}
+          </ul>
+        ) : null}
 
-            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
-              <Key className={WEIGHTS}>{t('verdict.weights')}</Key>
-              <Key className={KV}>{t('verdict.kv')}</Key>
-              <Key className={COMPUTE}>{t('verdict.compute')}</Key>
-            </div>
-
-            {e.findings.length ? (
-              <ul className="mt-4 space-y-1 text-sm">
-                {e.findings.map((f, i) => (
-                  <li key={`${f.code}-${i}`} className="flex gap-2">
-                    <span className="text-muted-foreground">·</span>
-                    <span>
-                      {t(`finding.${f.code}` as StringKey)}
-                      {f.bytes !== undefined ? <b> {bytes(f.bytes)}</b> : null}
-                      {f.device ? ` (${f.device})` : ''}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-
-            {e.suggestions.length ? (
-              <div className="mt-4 flex flex-wrap gap-2">
-                {e.suggestions.map((s) => (
-                  <button
-                    key={s.code}
-                    type="button"
-                    disabled={!onApply}
-                    onClick={() => onApply?.(s)}
-                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-medium transition-colors hover:bg-accent disabled:opacity-60"
-                  >
-                    {t(`fix.${s.code}` as StringKey)}
-                    {s.value !== undefined ? (
-                      <Badge tone="brand">{tokens(s.value)}</Badge>
-                    ) : null}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </>
-        )}
+        {e.suggestions.length ? (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {e.suggestions.map((s) => (
+              <button
+                key={s.code}
+                type="button"
+                disabled={!onApply}
+                onClick={() => onApply?.(s)}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-medium transition-colors hover:bg-accent disabled:opacity-60"
+              >
+                {t(`fix.${s.code}` as StringKey)}
+                {s.value !== undefined ? (
+                  <Badge tone="brand">{tokens(s.value)}</Badge>
+                ) : null}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
     </>
   )
