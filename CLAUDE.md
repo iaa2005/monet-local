@@ -1,23 +1,30 @@
 # Monet Local — engineering notes
 
-Desktop wrapper around llama.cpp's `llama-server`: every flag explained and
-budgeted, runtime packs (Vulkan / CUDA / CPU), model library, memory
-estimator, benchmark, chat, and a provider mode for Code Monet.
+A server, not a chat. Monet Local runs llama.cpp's `llama-server` with every
+flag explained and budgeted, manages runtime packs for any backend, indexes
+GGUF models, benchmarks profiles, and exposes one endpoint that speaks both
+the OpenAI and the Anthropic API. Code Monet (and Claude Code, curl, anything)
+connects to it; all tuning happens here.
 
-Read `docs/PLAN.md` first — decisions D1–D8, architecture, milestones. This
-file is the short version an agent needs while editing.
+Read `docs/PLAN.md` first — decisions D1–D8, the management API, the Code
+Monet integration (part 2), milestones. This file is the short version an
+agent needs while editing.
 
 ## Stack (same as Code Monet, `D:\Projects\monet\desktop`)
 
 Electron 33 · electron-vite 2 · React 19 · TypeScript 5.6 (strict) ·
-Tailwind 4 (`@tailwindcss/postcss`) · shadcn/react + radix-ui · zustand ·
-zod · lucide-react + hugeicons via @iconify · electron-builder 25 (NSIS) ·
-electron-updater (GitHub Releases, repo `iaa2005/monet-local`).
+Tailwind 4 · shadcn/react + radix-ui · zustand · zod · **lucide-react only**
+(no hugeicons/@iconify) · electron-builder 25 (NSIS) · electron-updater
+(GitHub Releases, repo `iaa2005/monet-local`).
 
-Layout: `src/main` (Node, process control) · `src/preload` (typed bridge,
-`window.local.*` by namespace) · `src/renderer` (React) · `src/shared`
-(code both sides must agree on: flag registry, types). Aliases `@main`,
-`@shared`, `@/` = renderer — as in monet's tsconfig.
+Layout: `src/main` (Node: process control, management server, proxy) ·
+`src/preload` (typed bridge, `window.local.*` by namespace) · `src/renderer`
+(React) · `src/shared` (flag registry, types, i18n strings). Aliases `@main`,
+`@shared`, `@/` = renderer, as in monet's tsconfig.
+
+Brand: orange `oklch(67.1967% 0.201986 42.2057)` (#f65e00). No painting
+background. Languages: en and ru, every user-visible string through i18n.
+App icon source: `build/icon-source.png`.
 
 ## Commands
 
@@ -33,39 +40,44 @@ npm run package      electron-builder → release/*.exe
 - **The flag registry (`src/shared/flags/registry.ts`) is the only source of
   truth.** Form, CLI preview, presets, validation and the estimator all read
   it. Never build a command line anywhere else.
+- **`--no-webui` always. Tools, MCP, `--agent` never.** Not in the registry,
+  not in any preset. The server spends nothing on them.
 - **`--no-repack` defaults on.** Repack keeps a second copy of Q4_K weights;
   on 32 GB it turned a working model into a swap storm and a `0xC0000409`.
-- **Bind `127.0.0.1` by default.** Tools and MCP are opt-in;
-  `exec_shell_command` is never in a default preset and carries a warning.
+- **Bind `127.0.0.1` by default.** LAN mode is an explicit toggle and makes
+  the API key mandatory.
 - **Never spawn a second `llama-server` silently.** Scan for running ones,
   warn, offer to stop. Two of them fighting for RAM cost a day.
-- **Do not put runtime binaries inside app.asar.** They go to
+- **Runtime binaries never inside app.asar.** They live in
   `%APPDATA%/monet-local/runtimes/`; bundled ones ship via `extraResources`.
-- **No native Node modules.** Everything llama.cpp is a child process.
+- **No native Node modules.** Everything llama.cpp is a child process; the
+  management server and proxy are plain `node:http`.
 - **Estimator output must name the reason** ("KV 16 GiB + weights 15.65 GiB
-  > 27.7 GB RAM"), never just a red badge. That is the whole point of the app.
-- **UMA GPUs share system RAM.** "GPU 17 GB" is subtracted from RAM, not added.
-  Verdicts on iGPU use total RAM as the ceiling.
+  > 27.7 GB RAM"), never just a red badge. That is the point of the app.
+- **UMA GPUs share system RAM.** "GPU 17 GB" is subtracted from RAM, not
+  added. Verdicts on iGPU use total RAM as the ceiling.
+- **Model ids are stable slugs** from the filename (`qwen3.8-27b-q4_k_m`);
+  they are what clients put in `model`. Do not use paths or display names.
 
 ## Style
 
 Follow monet's code: English identifiers and comments; comments explain
-*why* a thing is the way it is (what broke, what was measured), not what the
-line does. Keep files small and named after the one thing they do. Prefer
-pure functions in `src/shared` and `src/main/*/pure.ts` so they are testable
-without Electron.
+*why* (what broke, what was measured), not what the line does. Small files
+named after the one thing they do. Pure functions in `src/shared` and
+`src/main/*/pure.ts` so they test without Electron.
 
 ## Reference material in this repo
 
-- `docs/PLAN.md` — the plan and open questions.
-- `docs/reference/llama-server-help.txt` — full `--help` of b10826 (735 lines).
+- `docs/PLAN.md` — plan, API, open questions.
+- `docs/reference/llama-server-help.txt` — full `--help` of b10826.
 - `docs/reference/llama-bench-help.txt`.
-- Measured facts for this machine: Appendix A of the plan. Use them as test
-  cases for the estimator.
+- `docs/reference/release-b10826.json` — Windows asset list, test fixture.
+- Measured facts for this machine: Appendix A of the plan — use them as
+  estimator test cases.
 
-## Testing without CUDA hardware
+## Testing without CUDA / other hardware
 
-The dev machine is a Ryzen 7840HS with a Radeon 780M (Vulkan, UMA). CUDA
-paths are exercised through the same backend-agnostic RuntimeManager with
-recorded `--list-devices` fixtures and a recorded release JSON. Mark the
-CUDA pack "untested" in the UI until a user confirms it.
+Dev machine: Ryzen 7840HS + Radeon 780M (Vulkan, UMA). Other backends are
+exercised through the same backend-agnostic RuntimeManager with recorded
+`--list-devices` fixtures and the recorded release JSON. Mark such packs
+"untested" in the UI until a user confirms them.

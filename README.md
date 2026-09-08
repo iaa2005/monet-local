@@ -1,15 +1,17 @@
 # Monet Local
 
-Local model provider for Code Monet, built on llama.cpp.
+Local model server for Code Monet, built on llama.cpp. A server, not a chat.
 
-The part LM Studio doesn't have: every `llama-server` flag with an
-explanation, a memory estimator that says *why* something won't fit,
-runtime packs for Vulkan / CUDA / CPU, an A/B benchmark, and a chat — in
-the Code Monet design.
+- every `llama-server` flag, explained, with a memory estimator that says
+  *why* something won't fit
+- runtime packs for any backend llama.cpp builds (Vulkan, CUDA, ROCm, SYCL,
+  OpenVINO, CPU, or your own build)
+- one endpoint that speaks both the OpenAI and the Anthropic API — Code
+  Monet, Claude Code, curl
+- A/B benchmark for profiles
 
-- Plan and architecture: [docs/PLAN.md](docs/PLAN.md)
-- Engineering notes for agents: [CLAUDE.md](CLAUDE.md)
-- llama.cpp flag reference: [docs/reference](docs/reference)
+Plan and architecture: [docs/PLAN.md](docs/PLAN.md). Notes for agents:
+[CLAUDE.md](CLAUDE.md). llama.cpp flag reference: [docs/reference](docs/reference).
 
 Status: planning. First milestone is the Electron scaffold with the Monet
-design tokens and a packaged `.exe`.
+design tokens, orange brand, and a packaged `.exe`.
