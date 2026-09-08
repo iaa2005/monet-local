@@ -216,13 +216,18 @@ const api = {
     get: (): Promise<ProfilesFile> => ipcRenderer.invoke('profiles:get'),
     set: (next: ProfilesFile): Promise<ProfilesFile> =>
       ipcRenderer.invoke('profiles:set', next),
-    /** Save settings for one model; forks a profile of its own on first use. */
-    setFor: (
-      modelId: string,
-      values: Profile,
+    create: (
       name: string,
-    ): Promise<ProfilesFile> =>
-      ipcRenderer.invoke('profiles:setFor', modelId, values, name),
+      values?: Profile,
+    ): Promise<{ file: ProfilesFile; id: string }> =>
+      ipcRenderer.invoke('profiles:create', name, values),
+    rename: (id: string, name: string): Promise<ProfilesFile> =>
+      ipcRenderer.invoke('profiles:rename', id, name),
+    remove: (id: string): Promise<ProfilesFile> =>
+      ipcRenderer.invoke('profiles:remove', id),
+    /** Change what a profile does — every model assigned to it feels it. */
+    setValues: (id: string, values: Profile): Promise<ProfilesFile> =>
+      ipcRenderer.invoke('profiles:setValues', id, values),
     assign: (modelId: string, profileId: string): Promise<ProfilesFile> =>
       ipcRenderer.invoke('profiles:assign', modelId, profileId),
   },

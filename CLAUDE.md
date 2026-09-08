@@ -190,6 +190,19 @@ explicit action that restarts the router and reloads what was loaded. Never
 apply on change: settings arrive a keystroke at a time and each apply
 reloads a model.
 
-Each model (so each quant — model ids are per file) carries its own profile.
-The first edit **forks**: a model sitting on a shared built-in gets a profile
-of its own rather than rewriting one that other models are using.
+The saved settings are the user's, and the UI calls them **configurations**.
+Nothing in the list is protected: the single seed exists so a fresh install
+has something to show, and it can be renamed or deleted like any other —
+deleting the last one re-seeds. Editing edits the configuration itself, so
+every model assigned to it moves together; the screen says how many that is
+before the keystroke rather than after it. There is no fork-on-edit: creating
+a configuration behind the user's back is the opposite of letting them manage
+their own.
+
+Naming: in code, `Profile` is the type for a bare set of flag values (used by
+the estimator, the builder and the benchmark) and `NamedProfile` is the saved
+entity the UI presents as a configuration. Keep user-facing strings on
+"configuration".
+
+Assignment is per model id, which is per file, so per quant — Q4 and Q6 of one
+model do not fit the same way and do not share settings unless asked to.

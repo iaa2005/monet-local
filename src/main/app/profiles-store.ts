@@ -1,6 +1,13 @@
 /**
  * Profiles: a set of flag values, and which model uses which.
  *
+ * They belong to the user, not to the app. Nothing here is protected,
+ * built-in or undeletable — the one profile that ships exists so a fresh
+ * install has something to show, and it can be renamed or deleted like any
+ * other. Model ids are per file, so a profile is assigned per quant, which
+ * is the level at which the settings actually differ: Q4 and Q6 of the same
+ * model do not fit the same way.
+ *
  * Kept apart from settings.json because these are the thing the user edits
  * most and the thing an export/import in M6 will carry.
  */
@@ -24,48 +31,24 @@ export interface ProfilesFile {
 }
 
 /**
- * The two profiles that come with the app, both of them measured.
+ * What a fresh install starts with: one profile, with the values measured on
+ * the dev machine as a starting point rather than a recommendation. The
+ * estimator is what says whether they apply to the machine in front of it.
  *
- * "Fast" is the fastest thing the dev machine does; "Long context" is the
- * only shape in which the full 262144 fits into 32 GB. They are starting
- * points, not recommendations for other hardware — the estimator is what
- * says whether either applies.
+ * Deliberately one. A list of opinions the user did not ask for is clutter
+ * they then have to clear out.
  */
-export const BUILT_IN: NamedProfile[] = [
-  {
-    id: 'fast',
-    name: 'Fast',
-    values: {
-      ctxSize: 8192,
-      noRepack: true,
-      ubatchSize: 256,
-      parallel: 1,
-      nPredict: 4096,
-      reasoningEffort: 'low',
-    },
+export const SEED: NamedProfile = {
+  id: 'default',
+  name: 'Default',
+  values: {
+    ctxSize: 8192,
+    noRepack: true,
+    ubatchSize: 256,
+    parallel: 1,
+    nPredict: 4096,
+    reasoningEffort: 'low',
   },
-  {
-    id: 'long-context',
-    name: 'Long context',
-    values: {
-      ctxSize: 131072,
-      noRepack: true,
-      noKvOffload: true,
-      flashAttn: 'on',
-      cacheTypeK: 'q8_0',
-      cacheTypeV: 'q4_0',
-      ubatchSize: 256,
-      parallel: 1,
-      nPredict: 4096,
-      reasoningEffort: 'low',
-    },
-  },
-]
-
-const EMPTY: ProfilesFile = {
-  profiles: BUILT_IN,
-  assignments: {},
-  defaultProfileId: 'fast',
 }
 
 function path(): string {
@@ -78,15 +61,20 @@ export function readProfiles(): ProfilesFile {
   if (cached) return cached
   try {
     const raw = JSON.parse(readFileSync(path(), 'utf8')) as ProfilesFile
-    cached = {
-      profiles: Array.isArray(raw.profiles) && raw.profiles.length
+    const profiles =
+      Array.isArray(raw.profiles) && raw.profiles.length
         ? raw.profiles
-        : BUILT_IN,
+        : [SEED]
+    cached = {
+      profiles,
       assignments: raw.assignments ?? {},
-      defaultProfileId: raw.defaultProfileId ?? 'fast',
+      defaultProfileId:
+        profiles.some((p) => p.id === raw.defaultProfileId)
+          ? raw.defaultProfileId
+          : profiles[0]!.id,
     }
   } catch {
-    cached = { ...EMPTY }
+    cached = { profiles: [SEED], assignments: {}, defaultProfileId: SEED.id }
   }
   return cached
 }
@@ -102,38 +90,79 @@ export function writeProfiles(next: ProfilesFile): ProfilesFile {
   return cached
 }
 
-/** The id a model's own profile gets. One per model file, so per quant. */
-export function ownProfileId(modelId: string): string {
-  return `model:${modelId}`
+/** The smallest unused `profile-N`, so ids stay short and predictable. */
+function nextId(taken: NamedProfile[]): string {
+  for (let n = 1; ; n++) {
+    const id = `profile-${n}`
+    if (!taken.some((p) => p.id === id)) return id
+  }
 }
 
-/**
- * Save settings for one model.
- *
- * The first edit forks. A model normally starts on a shared profile — one of
- * the built-ins — and writing straight into that would silently change every
- * other model using it, which is not what editing the settings in front of
- * one model means. So the model gets a profile of its own, named after it,
- * and the assignment moves there.
- */
-export function setProfileFor(
-  modelId: string,
-  values: Profile,
-  name: string,
-): ProfilesFile {
+export interface CreateResult {
+  file: ProfilesFile
+  id: string
+}
+
+/** A new profile, optionally starting from the values of another. */
+export function createProfile(name: string, values: Profile = {}): CreateResult {
   const f = readProfiles()
-  const id = ownProfileId(modelId)
-  const existing = f.profiles.some((p) => p.id === id)
+  const id = nextId(f.profiles)
+  return {
+    file: writeProfiles({ ...f, profiles: [...f.profiles, { id, name, values }] }),
+    id,
+  }
+}
+
+export function renameProfile(id: string, name: string): ProfilesFile {
+  const f = readProfiles()
   return writeProfiles({
     ...f,
-    profiles: existing
-      ? f.profiles.map((p) => (p.id === id ? { ...p, name, values } : p))
-      : [...f.profiles, { id, name, values }],
-    assignments: { ...f.assignments, [modelId]: id },
+    profiles: f.profiles.map((p) => (p.id === id ? { ...p, name } : p)),
   })
 }
 
-/** Point a model at an existing profile — a built-in, or another model's. */
+/**
+ * Change what a profile does.
+ *
+ * Edits the profile itself, and every model assigned to it feels that —
+ * which is what a named, user-managed profile means. The screen says how
+ * many models share one so the effect is visible before the keystroke, not
+ * discovered after it.
+ */
+export function setProfileValues(id: string, values: Profile): ProfilesFile {
+  const f = readProfiles()
+  return writeProfiles({
+    ...f,
+    profiles: f.profiles.map((p) => (p.id === id ? { ...p, values } : p)),
+  })
+}
+
+/**
+ * Delete a profile, and leave the file coherent.
+ *
+ * Models pointing at it fall back to the default; if the default was the one
+ * deleted, another takes over. Deleting the last profile re-seeds rather
+ * than leaving a model with no settings at all.
+ */
+export function removeProfile(id: string): ProfilesFile {
+  const f = readProfiles()
+  const profiles = f.profiles.filter((p) => p.id !== id)
+  if (!profiles.length) {
+    return writeProfiles({
+      profiles: [SEED],
+      assignments: {},
+      defaultProfileId: SEED.id,
+    })
+  }
+  const defaultProfileId =
+    f.defaultProfileId === id ? profiles[0]!.id : f.defaultProfileId
+  const assignments = Object.fromEntries(
+    Object.entries(f.assignments).filter(([, pid]) => pid !== id),
+  )
+  return writeProfiles({ profiles, assignments, defaultProfileId })
+}
+
+/** Point a model at a profile. */
 export function assignProfile(modelId: string, profileId: string): ProfilesFile {
   const f = readProfiles()
   return writeProfiles({
@@ -145,9 +174,5 @@ export function assignProfile(modelId: string, profileId: string): ProfilesFile 
 export function profileFor(modelId: string): NamedProfile {
   const f = readProfiles()
   const id = f.assignments[modelId] ?? f.defaultProfileId
-  return (
-    f.profiles.find((p) => p.id === id) ??
-    f.profiles[0] ??
-    (BUILT_IN[0] as NamedProfile)
-  )
+  return f.profiles.find((p) => p.id === id) ?? f.profiles[0] ?? SEED
 }

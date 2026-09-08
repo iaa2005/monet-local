@@ -7,9 +7,12 @@ import type { Hardware, Profile } from '@shared/flags/types.js'
 import { getMainWindow } from '../app/main-window.js'
 import {
   assignProfile,
+  createProfile,
   profileFor,
   readProfiles,
-  setProfileFor,
+  removeProfile,
+  renameProfile,
+  setProfileValues,
   writeProfiles,
   type ProfilesFile,
 } from '../app/profiles-store.js'
@@ -247,10 +250,15 @@ export function registerServerIpc(): void {
   })
 
   ipcMain.handle('profiles:get', () => readProfiles())
-  ipcMain.handle(
-    'profiles:setFor',
-    (_e, modelId: string, values: Profile, name: string) =>
-      setProfileFor(modelId, values, name),
+  ipcMain.handle('profiles:create', (_e, name: string, values?: Profile) =>
+    createProfile(name, values ?? {}),
+  )
+  ipcMain.handle('profiles:rename', (_e, id: string, name: string) =>
+    renameProfile(id, name),
+  )
+  ipcMain.handle('profiles:remove', (_e, id: string) => removeProfile(id))
+  ipcMain.handle('profiles:setValues', (_e, id: string, values: Profile) =>
+    setProfileValues(id, values),
   )
   ipcMain.handle('profiles:assign', (_e, modelId: string, profileId: string) =>
     assignProfile(modelId, profileId),

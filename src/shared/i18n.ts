@@ -37,7 +37,8 @@ export const en = {
   'runtimes.blurb':
     'llama.cpp builds — Vulkan, CUDA, ROCm, CPU, or a folder of your own.',
   'benchmark.title': 'Benchmark',
-  'benchmark.blurb': 'Run two profiles against each other and keep the numbers.',
+  'benchmark.blurb':
+    'Run two configurations against each other and keep the numbers.',
   'integrations.title': 'Integrations',
   'integrations.blurb':
     'Connect Code Monet, Claude Code, or anything that speaks OpenAI or Anthropic.',
@@ -116,9 +117,17 @@ export const en = {
   'server.apply': 'Apply',
   'server.applying': 'Applying…',
   'server.changed': 'changed',
-  'server.basedOn': 'Profile',
+  'profiles.new': 'New configuration',
+  'profiles.newName': 'New configuration',
+  'profiles.duplicate': 'Duplicate',
+  'profiles.copySuffix': 'copy',
+  'profiles.rename': 'Rename',
+  'profiles.delete': 'Delete',
+  'profiles.sharedBy': 'shared by models:',
+  'profiles.deleteHint': 'Delete this configuration',
+  'profiles.confirmDelete': 'Delete?',
   'server.command': 'Command',
-  'server.profile': 'Profile',
+  'server.profile': 'Configuration',
 
   'verdict.fits': 'Fits',
   'verdict.tight': 'Tight',
@@ -134,7 +143,7 @@ export const en = {
   'verdict.free': 'free',
   'verdict.overBy': 'over by',
   'verdict.ceilingHint':
-    'Two ceilings, and a profile has to clear both: everything must fit in RAM, and whatever is offloaded must fit in what the GPU will allocate.',
+    'Two ceilings, and a configuration has to clear both: everything must fit in RAM, and whatever is offloaded must fit in what the GPU will allocate.',
 
   'finding.exceeds-ram': 'Over the RAM budget by',
   'finding.exceeds-device': 'Over what the GPU will allocate, by',
@@ -194,7 +203,7 @@ export const en = {
   'bench.run': 'Run',
   'bench.running': 'Measuring…',
   'bench.model': 'Model',
-  'bench.profile': 'Profile',
+  'bench.profile': 'Configuration',
   'bench.prompt': 'Prompt',
   'bench.generation': 'Generation',
   'bench.history': 'History',
@@ -253,7 +262,7 @@ export const ru: Record<StringKey, string> = {
   'runtimes.blurb':
     'Сборки llama.cpp — Vulkan, CUDA, ROCm, CPU или своя папка.',
   'benchmark.title': 'Бенчмарк',
-  'benchmark.blurb': 'Сравнение двух профилей с сохранением результатов.',
+  'benchmark.blurb': 'Сравнение двух конфигураций с сохранением результатов.',
   'integrations.title': 'Интеграции',
   'integrations.blurb':
     'Подключение Code Monet, Claude Code и всего, что понимает OpenAI или Anthropic.',
@@ -332,9 +341,17 @@ export const ru: Record<StringKey, string> = {
   'server.apply': 'Применить',
   'server.applying': 'Применяю…',
   'server.changed': 'изменено',
-  'server.basedOn': 'Профиль',
+  'profiles.new': 'Новая конфигурация',
+  'profiles.newName': 'Новая конфигурация',
+  'profiles.duplicate': 'Дублировать',
+  'profiles.copySuffix': 'копия',
+  'profiles.rename': 'Переименовать',
+  'profiles.delete': 'Удалить',
+  'profiles.sharedBy': 'общая для моделей:',
+  'profiles.deleteHint': 'Удалить эту конфигурацию',
+  'profiles.confirmDelete': 'Удалить?',
   'server.command': 'Команда',
-  'server.profile': 'Профиль',
+  'server.profile': 'Конфигурация',
 
   'verdict.fits': 'Влезает',
   'verdict.tight': 'Впритык',
@@ -350,7 +367,7 @@ export const ru: Record<StringKey, string> = {
   'verdict.free': 'свободно',
   'verdict.overBy': 'превышение на',
   'verdict.ceilingHint':
-    'Потолка два, и профиль должен пройти оба: всё должно поместиться в оперативную память, а то, что уходит на видеокарту, — в то, что она согласится выделить.',
+    'Потолка два, и конфигурация должна пройти оба: всё должно поместиться в оперативную память, а то, что уходит на видеокарту, — в то, что она согласится выделить.',
 
   'finding.exceeds-ram': 'Превышение бюджета RAM на',
   'finding.exceeds-device': 'Больше, чем выделит видеокарта, на',
@@ -410,7 +427,7 @@ export const ru: Record<StringKey, string> = {
   'bench.run': 'Запустить',
   'bench.running': 'Измеряю…',
   'bench.model': 'Модель',
-  'bench.profile': 'Профиль',
+  'bench.profile': 'Конфигурация',
   'bench.prompt': 'Промпт',
   'bench.generation': 'Генерация',
   'bench.history': 'История',

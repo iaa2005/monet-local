@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Play, RotateCw, Square } from 'lucide-react'
+import { Copy, Pencil, Play, Plus, RotateCw, Square, Trash2 } from 'lucide-react'
 import type { Estimate } from '@shared/estimator.js'
 import type { StringKey } from '@shared/i18n.js'
 import type { Hardware, Profile } from '@shared/flags/types.js'
@@ -38,6 +38,12 @@ export function Server(): JSX.Element {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [renaming, setRenaming] = useState(false)
+  const [draftName, setDraftName] = useState('')
+  const [armed, setArmed] = useState(false)
+
+  const selectCls =
+    'h-9 w-full rounded-lg border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
   const refresh = useCallback(async () => {
     const [s, scan, hw, str, p, pend] = await Promise.all([
@@ -63,10 +69,19 @@ export function Server(): JSX.Element {
    * The settings on screen belong to the selected model, not to whatever
    * profile happens to be the default — each model, so each quant, carries
    * its own.
+   *
+   * Only when the model or its profile changes. Reloading on every update
+   * of the profiles file would fight the person typing: a save lands 400 ms
+   * behind the keystroke that triggered it, and putting the saved value
+   * back on screen would undo everything typed in between.
    */
+  const loadedFor = useRef<string | null>(null)
   useEffect(() => {
     if (!selected || !profiles) return
     const id = profiles.assignments[selected] ?? profiles.defaultProfileId
+    const key = `${selected}:${id}`
+    if (loadedFor.current === key) return
+    loadedFor.current = key
     setValues(profiles.profiles.find((x) => x.id === id)?.values ?? {})
   }, [selected, profiles])
 
@@ -93,6 +108,23 @@ export function Server(): JSX.Element {
     }
   }, [selected, values])
 
+  /** The profile the selected model is on. */
+  const profileId =
+    (selected ? profiles?.assignments[selected] : undefined) ??
+    profiles?.defaultProfileId
+  const profile = profiles?.profiles.find((p) => p.id === profileId)
+  /** How many models this profile speaks for — editing it moves all of them. */
+  const sharedWith = models.filter(
+    (m) =>
+      (profiles?.assignments[m.id] ?? profiles?.defaultProfileId) === profileId,
+  ).length
+
+  const reload = async (file?: ProfilesFile): Promise<void> => {
+    if (file) setProfiles(file)
+    const pend = await api()?.server.pending()
+    if (pend) setPending(pend)
+  }
+
   /**
    * Save the edit; do not apply it.
    *
@@ -100,21 +132,28 @@ export function Server(): JSX.Element {
    * applied because applying means reloading the model — llama.cpp fixes a
    * model's arguments when it loads it — and doing that per keystroke is
    * not something anyone wants. The banner is how it gets applied.
+   *
+   * It edits the profile, not a copy of it: a profile is a named thing the
+   * user made, and every model on it is meant to move together. The count
+   * beside the name says how many that is, before the keystroke rather than
+   * after it.
    */
   const edit = (next: Profile): void => {
     setValues(next)
-    const id = selected
-    const name = models.find((m) => m.id === id)?.displayName
-    if (!id || !name) return
+    if (!profileId) return
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => {
       void (async () => {
-        const p = await api()?.profiles.setFor(id, next, name)
-        if (p) setProfiles(p)
-        const pend = await api()?.server.pending()
-        if (pend) setPending(pend)
+        await reload(await api()?.profiles.setValues(profileId, next))
       })()
     }, 400)
+  }
+
+  const commitRename = async (): Promise<void> => {
+    setRenaming(false)
+    const name = draftName.trim()
+    if (!profileId || !name || name === profile?.name) return
+    await reload(await api()?.profiles.rename(profileId, name))
   }
 
   const guard = async (fn: () => Promise<unknown>): Promise<void> => {
@@ -329,60 +368,153 @@ export function Server(): JSX.Element {
 
       {selected && estimate ? (
         <Section title={t('server.profile')}>
-          <Verdict
-            estimate={estimate}
-            onApply={(fix) => {
-              // Every suggestion maps to a flag the panel below owns, so
-              // "do that for me" is one setState rather than advice.
-              const next: Profile = { ...values }
-              if (fix.code === 'lower-context' && fix.value)
-                next['ctxSize'] = fix.value
-              if (fix.code === 'enable-no-kv-offload') next['noKvOffload'] = true
-              if (fix.code === 'enable-no-repack') next['noRepack'] = true
-              if (fix.code === 'disable-mlock') next['mlock'] = false
-              if (fix.code === 'lower-ubatch')
-                next['ubatchSize'] = Math.max(
-                  16,
-                  Math.floor(Number(values['ubatchSize'] ?? 256) / 2),
-                )
-              if (fix.code === 'quantise-kv') {
-                next['flashAttn'] = 'on'
-                next['cacheTypeK'] = 'q8_0'
-                next['cacheTypeV'] = 'q4_0'
-              }
-              edit(next)
+          {/* Directly under the heading, which already says what this is —
+              a second "Configuration" label above the select would be the
+              same word twice. The configurations are the user's: made
+              here, renamed here, deleted here, and nothing in the list is
+              protected. */}
+          <div
+            className="flex flex-wrap items-end gap-2"
+            onPointerDown={(e) => {
+              // Disarm on anything that is not the delete button itself.
+              if (armed && !(e.target as HTMLElement).closest('[data-arm]'))
+                setArmed(false)
             }}
-          />
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-              {t('server.basedOn')}
-            </span>
-            {/* Which saved profile this model starts from. The next edit
-                forks it into one that belongs to this model alone, so
-                changing a shared profile's values here cannot quietly
-                change every other model using it. */}
-            <select
-              className="h-9 rounded-lg border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              value={
-                profiles?.assignments[selected] ?? profiles?.defaultProfileId ?? ''
-              }
-              onChange={(e) =>
+          >
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              {renaming ? (
+                // Rename in place: the name is one field, and a dialog for
+                // one field is a dialog too many.
+                <input
+                  autoFocus
+                  className={selectCls}
+                  value={draftName}
+                  onChange={(e) => setDraftName(e.target.value)}
+                  onBlur={() => void commitRename()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void commitRename()
+                    if (e.key === 'Escape') setRenaming(false)
+                  }}
+                />
+              ) : (
+                <select
+                  className={selectCls}
+                  value={profileId ?? ''}
+                  onChange={(e) =>
+                    void (async () => {
+                      await reload(
+                        await api()?.profiles.assign(selected, e.target.value),
+                      )
+                    })()
+                  }
+                >
+                  {(profiles?.profiles ?? []).map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <Button
+              size="icon-sm"
+              variant="outline"
+              title={t('profiles.new')}
+              onClick={() =>
                 void (async () => {
-                  const p = await api()?.profiles.assign(selected, e.target.value)
-                  if (p) setProfiles(p)
-                  const pend = await api()?.server.pending()
-                  if (pend) setPending(pend)
+                  const r = await api()?.profiles.create(t('profiles.newName'))
+                  if (!r) return
+                  await reload(
+                    await api()?.profiles.assign(selected, r.id),
+                  )
+                  setDraftName(t('profiles.newName'))
+                  setRenaming(true)
                 })()
               }
             >
-              {(profiles?.profiles ?? []).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+              <Plus className="size-3.5" />
+            </Button>
+            <Button
+              size="icon-sm"
+              variant="outline"
+              title={t('profiles.duplicate')}
+              onClick={() =>
+                void (async () => {
+                  const name = `${profile?.name ?? ''} ${t('profiles.copySuffix')}`
+                  const r = await api()?.profiles.create(name, values)
+                  if (!r) return
+                  await reload(await api()?.profiles.assign(selected, r.id))
+                })()
+              }
+            >
+              <Copy className="size-3.5" />
+            </Button>
+            <Button
+              size="icon-sm"
+              variant="outline"
+              title={t('profiles.rename')}
+              onClick={() => {
+                setDraftName(profile?.name ?? '')
+                setRenaming(true)
+              }}
+            >
+              <Pencil className="size-3.5" />
+            </Button>
+            {/* Asks once. A tuned configuration is minutes of work and
+                there is no undo, so the first click arms and the second
+                does it; anything else on the row disarms. */}
+            <Button
+              data-arm
+              size={armed ? 'sm' : 'icon-sm'}
+              variant={armed ? 'destructive' : 'outline'}
+              title={t('profiles.deleteHint')}
+              onClick={() =>
+                void (async () => {
+                  if (!profileId) return
+                  if (!armed) return setArmed(true)
+                  setArmed(false)
+                  await reload(await api()?.profiles.remove(profileId))
+                })()
+              }
+            >
+              <Trash2 className={armed ? 'mr-2 size-3.5' : 'size-3.5'} />
+              {armed ? t('profiles.confirmDelete') : null}
+            </Button>
           </div>
+          {sharedWith > 1 ? (
+            // Said before the keystroke rather than discovered after it.
+            <p className="mt-2 text-xs text-warn">
+              {t('profiles.sharedBy')} {sharedWith}
+            </p>
+          ) : null}
 
+          <div className="mt-5">
+            <Verdict
+              estimate={estimate}
+              onApply={(fix) => {
+                // Every suggestion maps to a flag the panel below owns, so
+                // "do that for me" is one setState rather than advice.
+                const next: Profile = { ...values }
+                if (fix.code === 'lower-context' && fix.value)
+                  next['ctxSize'] = fix.value
+                if (fix.code === 'enable-no-kv-offload')
+                  next['noKvOffload'] = true
+                if (fix.code === 'enable-no-repack') next['noRepack'] = true
+                if (fix.code === 'disable-mlock') next['mlock'] = false
+                if (fix.code === 'lower-ubatch')
+                  next['ubatchSize'] = Math.max(
+                    16,
+                    Math.floor(Number(values['ubatchSize'] ?? 256) / 2),
+                  )
+                if (fix.code === 'quantise-kv') {
+                  next['flashAttn'] = 'on'
+                  next['cacheTypeK'] = 'q8_0'
+                  next['cacheTypeV'] = 'q4_0'
+                }
+                edit(next)
+              }}
+            />
+          </div>
           <div className="mt-4">
             <ProfilePanel
               values={values}

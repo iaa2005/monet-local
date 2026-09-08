@@ -9,7 +9,7 @@ vi.mock('electron', () => ({ app: { getPath: () => tmp } }))
 const { Router } = await import('./router.js')
 const { ensureDirs } = await import('../app/settings-store.js')
 const { scanFolders } = await import('../models/library.js')
-const { BUILT_IN } = await import('../app/profiles-store.js')
+const { SEED } = await import('../app/profiles-store.js')
 
 const LLAMA = 'D:/Colibri/llamacpp/llama-server.exe'
 const MODELS = 'D:/Colibri/models'
@@ -36,7 +36,7 @@ describe.skipIf(!canRun)('Router against real llama.cpp', () => {
     await router.start(
       models.map((m) => ({
         id: m.id,
-        profile: BUILT_IN[0]!.values,
+        profile: SEED.values,
         modelPath: m.path,
         ...(m.mmprojPath ? { mmprojPath: m.mmprojPath } : {}),
       })),
