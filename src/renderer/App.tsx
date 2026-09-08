@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { BarChart3, Plug, Server } from 'lucide-react'
+import { BarChart3, Plug } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Sidebar } from '@/components/Sidebar'
 import {
@@ -9,6 +9,7 @@ import {
 import { Models } from '@/screens/Models'
 import { Placeholder } from '@/screens/Placeholder'
 import { Runtimes } from '@/screens/Runtimes'
+import { Server as ServerScreen } from '@/screens/Server'
 import { Settings } from '@/screens/Settings'
 import {
   applyTheme,
@@ -68,7 +69,7 @@ export default function App(): JSX.Element {
 function Screen({ id }: { id: Exclude<ScreenId, 'settings'> }): JSX.Element {
   switch (id) {
     case 'server':
-      return <Placeholder title="server.title" blurb="server.blurb" Icon={Server} />
+      return <ServerScreen />
     case 'models':
       return <Models />
     case 'runtimes':

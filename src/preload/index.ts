@@ -5,6 +5,11 @@ import type { BackendId } from '@shared/runtimes/catalog.js'
 import type { Device } from '@shared/runtimes/devices.js'
 import type { InstalledPack } from '@main/runtimes/manager.js'
 import type { ModelInfo } from '@main/models/describe.js'
+import type { Estimate } from '@shared/estimator.js'
+import type { Hardware, Profile } from '@shared/flags/types.js'
+import type { ProfilesFile } from '@main/app/profiles-store.js'
+import type { RouterStatus } from '@main/server/router.js'
+import type { StrayProcess } from '@main/server/orphans.js'
 
 export interface RuntimeState {
   installed: InstalledPack[]
@@ -47,7 +52,24 @@ export interface ScanResult {
   failures: { path: string; error: string }[]
 }
 
-export type { Device, InstalledPack, ModelFolder, ModelInfo }
+export interface EstimateResult {
+  estimate: Estimate
+  /** The exact command this profile would run, from the same registry. */
+  command: string
+}
+
+export type {
+  Device,
+  Estimate,
+  Hardware,
+  InstalledPack,
+  ModelFolder,
+  ModelInfo,
+  Profile,
+  ProfilesFile,
+  RouterStatus,
+  StrayProcess,
+}
 
 /**
  * The renderer's whole view of main, grouped by namespace so that
@@ -100,6 +122,32 @@ const api = {
       ipcRenderer.invoke('models:addFolder', readOnly),
     removeFolder: (path: string): Promise<ModelFolder[]> =>
       ipcRenderer.invoke('models:removeFolder', path),
+  },
+
+  server: {
+    status: (): Promise<RouterStatus> => ipcRenderer.invoke('server:status'),
+    hardware: (): Promise<Hardware> => ipcRenderer.invoke('server:hardware'),
+    start: (): Promise<RouterStatus> => ipcRenderer.invoke('server:start'),
+    stop: (): Promise<RouterStatus> => ipcRenderer.invoke('server:stop'),
+    load: (id: string): Promise<void> => ipcRenderer.invoke('server:load', id),
+    unload: (id: string): Promise<void> =>
+      ipcRenderer.invoke('server:unload', id),
+    strays: (): Promise<StrayProcess[]> => ipcRenderer.invoke('server:strays'),
+    killStray: (pid: number): Promise<void> =>
+      ipcRenderer.invoke('server:killStray', pid),
+    estimate: (modelId: string, values: Profile): Promise<EstimateResult> =>
+      ipcRenderer.invoke('server:estimate', modelId, values),
+    onStatus: (cb: (s: RouterStatus) => void): (() => void) => {
+      const h = (_e: unknown, s: RouterStatus): void => cb(s)
+      ipcRenderer.on('server:status', h)
+      return () => ipcRenderer.off('server:status', h)
+    },
+  },
+
+  profiles: {
+    get: (): Promise<ProfilesFile> => ipcRenderer.invoke('profiles:get'),
+    set: (next: ProfilesFile): Promise<ProfilesFile> =>
+      ipcRenderer.invoke('profiles:set', next),
   },
 
   prefs: {

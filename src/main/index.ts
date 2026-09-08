@@ -9,6 +9,7 @@ import {
 } from './app/main-window.js'
 import { readPrefs } from './app/prefs-store.js'
 import { registerIpc } from './ipc/index.js'
+import { shutdownServer } from './ipc/server.js'
 
 const isDev = !app.isPackaged
 
@@ -101,5 +102,15 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit()
+  })
+
+  // A router left running holds 16 GB of weights and the port. Stop it
+  // before the process goes, and make quitting wait for that to finish.
+  let shuttingDown = false
+  app.on('before-quit', (e) => {
+    if (shuttingDown) return
+    e.preventDefault()
+    shuttingDown = true
+    void shutdownServer().finally(() => app.quit())
   })
 }

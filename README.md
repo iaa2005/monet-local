@@ -21,7 +21,14 @@ actually see. The model library reads GGUF headers (never the weights) and
 reports architecture, quantisation, context, MoE-or-dense, vision, an MTP
 head, and what a token of context costs in KV cache.
 
-Next: M2 — the flag registry, the memory estimator, and the router.
+**M2 — profiles, estimator, router. Done.** One flag registry feeds the form,
+the command preview and the router's INI preset. The estimator says whether a
+profile will run *and why not*, checked against two ceilings — RAM, and what
+the GPU allocator will actually hand out. The router is llama.cpp's own
+multi-model mode: models load and unload over HTTP, and only Monet Local
+decides which.
+
+Next: M3 — the management API and the proxy that fronts both of them.
 
 ## Develop
 
