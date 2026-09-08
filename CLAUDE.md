@@ -283,3 +283,21 @@ that width is MEASURED: `100vw` overshoots and then needs clipping, but
 silently makes the page horizontally scrollable by two thousand pixels of
 nothing. Centring with a transform does not land exactly either — the offset
 to the scroller's edge is a number, so it is used as one.
+
+## The handbook is content, not components
+
+`src/renderer/handbook/{en,ru}.ts` are data — chapters of topics of typed
+blocks — so both languages carry the same structure and the screen has one
+renderer to keep right. The inline markup is three things wide: `$maths$`,
+`` `code` `` and `**bold**`. Anything more is a markdown dependency plus a
+sanitiser plus a theme, to get italics.
+
+Its formulae are the ones this program actually computes, and each topic ends
+with an `app` block naming where the number shows up. That is the whole
+argument for a handbook inside the program rather than a link to one — and it
+means a change to the estimator is a change to the handbook.
+
+The first half follows the path of "The Welch Labs Illustrated Guide to AI"
+(Stephen Welch, 2025). The prose is ours; the book is credited in the closing
+topic, along with the note that the measurements come from one machine and do
+not travel.

@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import logo from '@/assets/logo.png'
 import { api } from '@/lib/api'
 import { Sidebar } from '@/components/Sidebar'
 import {
@@ -6,6 +7,7 @@ import {
   WindowControls,
 } from '@/components/WindowControls'
 import { Benchmark } from '@/screens/Benchmark'
+import { Handbook } from '@/screens/Handbook'
 import { Integrations } from '@/screens/Integrations'
 import { Models } from '@/screens/Models'
 import { Runtimes } from '@/screens/Runtimes'
@@ -49,7 +51,16 @@ export default function App(): JSX.Element {
     <div className="flex h-full flex-col">
       <header className="app-drag flex h-[var(--titlebar-h)] shrink-0 items-center border-b border-border bg-sidebar">
         <MacTrafficLightInset />
-        <span className="font-display px-3 text-[13px] font-semibold tracking-tight">
+        {/* The window's own icon at the size the titlebar has room for.
+            Not draggable: otherwise a drag on it starts an image drag
+            instead of moving the window. */}
+        <img
+          src={logo}
+          alt=""
+          draggable={false}
+          className="ml-3 size-[18px] rounded-[4px]"
+        />
+        <span className="font-display px-2 text-base font-semibold tracking-tight">
           {t('app.name')}
         </span>
         <div className="flex-1" />
@@ -76,6 +87,8 @@ function Screen({ id }: { id: Exclude<ScreenId, 'settings'> }): JSX.Element {
       return <Runtimes />
     case 'benchmark':
       return <Benchmark />
+    case 'handbook':
+      return <Handbook />
     case 'integrations':
       return <Integrations />
   }

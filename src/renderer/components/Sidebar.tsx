@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  BookOpen,
   Boxes,
   Cpu,
   Plug,
@@ -18,6 +19,8 @@ const ITEMS: { id: ScreenId; label: StringKey; Icon: LucideIcon }[] = [
   { id: 'benchmark', label: 'nav.benchmark', Icon: BarChart3 },
   { id: 'integrations', label: 'nav.integrations', Icon: Plug },
   { id: 'settings', label: 'nav.settings', Icon: SettingsIcon },
+  // Last, and the only entry that does not act on the machine.
+  { id: 'handbook', label: 'nav.handbook', Icon: BookOpen },
 ]
 
 export function Sidebar(): JSX.Element {

@@ -10,6 +10,7 @@ export type ScreenId =
   | 'benchmark'
   | 'integrations'
   | 'settings'
+  | 'handbook'
 
 interface UiState {
   screen: ScreenId

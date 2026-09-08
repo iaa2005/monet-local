@@ -1,6 +1,9 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+// KaTeX brings its own fonts; imported once here so every formula in the
+// handbook renders the same wherever it appears.
+import 'katex/dist/katex.min.css'
 import './styles/globals.css'
 import { api } from './lib/api'
 import { DEFAULT_PREFS } from '@shared/prefs.js'

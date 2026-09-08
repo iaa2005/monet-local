@@ -26,6 +26,13 @@ export const en = {
   'nav.benchmark': 'Benchmark',
   'nav.integrations': 'Integrations',
   'nav.settings': 'Settings',
+  'nav.handbook': 'Handbook',
+  'handbook.title': 'Handbook',
+  'handbook.blurb':
+    'How the model works, what every setting does, and how to arrive at a configuration that runs.',
+  'handbook.contents': 'Contents',
+  'handbook.prev': 'Previous',
+  'handbook.next': 'Next',
 
   'server.title': 'Server',
   'server.blurb':
@@ -256,6 +263,13 @@ export const ru: Record<StringKey, string> = {
   'nav.benchmark': 'Бенчмарк',
   'nav.integrations': 'Интеграции',
   'nav.settings': 'Настройки',
+  'nav.handbook': 'Учебник',
+  'handbook.title': 'Учебник',
+  'handbook.blurb':
+    'Как устроена модель, что делает каждая настройка и как собрать конфигурацию, которая работает.',
+  'handbook.contents': 'Содержание',
+  'handbook.prev': 'Назад',
+  'handbook.next': 'Дальше',
 
   'server.title': 'Сервер',
   'server.blurb':
