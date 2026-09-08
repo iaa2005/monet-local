@@ -10,6 +10,9 @@ import type { Hardware, Profile } from '@shared/flags/types.js'
 import type { ProfilesFile } from '@main/app/profiles-store.js'
 import type { RouterStatus } from '@main/server/router.js'
 import type { StrayProcess } from '@main/server/orphans.js'
+import type { StoredRun } from '@main/bench/run.js'
+import type { HfFile, HfRepo } from '@shared/hf.js'
+import type { DownloadProgress, DownloadResult } from '@main/models/download.js'
 
 export interface RuntimeState {
   installed: InstalledPack[]
@@ -66,9 +69,24 @@ export interface EstimateResult {
   command: string
 }
 
+export interface RepoContents {
+  repoId: string
+  models: HfFile[]
+  projectors: HfFile[]
+  /** Split archives, listed so their absence from `models` is explicable. */
+  split: string[]
+}
+
+/** A download's progress, tagged with the file it belongs to. */
+export type DownloadEvent = DownloadProgress & { path: string }
+
 export type {
   AppSettings,
   Device,
+  DownloadResult,
+  HfFile,
+  HfRepo,
+  StoredRun,
   Estimate,
   Hardware,
   InstalledPack,
@@ -158,6 +176,38 @@ const api = {
     get: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
     set: (patch: Partial<AppSettings>): Promise<AppSettings> =>
       ipcRenderer.invoke('settings:set', patch),
+  },
+
+  bench: {
+    history: (): Promise<StoredRun[]> => ipcRenderer.invoke('bench:history'),
+    run: (
+      modelId: string,
+      profileName: string,
+      profile: Profile,
+      opts?: { promptTokens?: number; genTokens?: number },
+    ): Promise<StoredRun> =>
+      ipcRenderer.invoke('bench:run', modelId, profileName, profile, opts),
+  },
+
+  hf: {
+    search: (query: string): Promise<HfRepo[]> =>
+      ipcRenderer.invoke('hf:search', query),
+    repo: (repoId: string): Promise<RepoContents> =>
+      ipcRenderer.invoke('hf:repo', repoId),
+    download: (
+      repoId: string,
+      path: string,
+      expectedBytes: number,
+      sha256?: string,
+    ): Promise<DownloadResult> =>
+      ipcRenderer.invoke('hf:download', repoId, path, expectedBytes, sha256),
+    pending: (): Promise<{ name: string; bytes: number }[]> =>
+      ipcRenderer.invoke('hf:pending'),
+    onProgress: (cb: (p: DownloadEvent) => void): (() => void) => {
+      const h = (_e: unknown, p: DownloadEvent): void => cb(p)
+      ipcRenderer.on('hf:progress', h)
+      return () => ipcRenderer.off('hf:progress', h)
+    },
   },
 
   profiles: {

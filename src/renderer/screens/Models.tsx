@@ -3,8 +3,11 @@ import { Eye, FolderPlus, RefreshCw, Trash2 } from 'lucide-react'
 import { bytes, tokens } from '@shared/format.js'
 import { Button } from '@/components/ui/button'
 import { Badge, Card, Empty, PageHeader, Section } from '@/components/ui/page'
+import { Segmented } from '@/components/ui/segmented'
+import { HuggingFace } from '@/screens/HuggingFace'
 import { api } from '@/lib/api'
 import { useT } from '@/stores/uiStore'
+import type { Hardware, Profile } from '@shared/flags/types.js'
 import type { ModelFolder, ModelInfo, ScanResult } from '../../preload/index.js'
 
 export function Models(): JSX.Element {
@@ -12,16 +15,29 @@ export function Models(): JSX.Element {
   const [folders, setFolders] = useState<ModelFolder[]>([])
   const [scan, setScan] = useState<ScanResult | null>(null)
   const [busy, setBusy] = useState(false)
+  const [tab, setTab] = useState<'local' | 'hf'>('local')
+  const [hardware, setHardware] = useState<Hardware>({
+    totalRamBytes: 0,
+    devices: [],
+  })
+  const [profile, setProfile] = useState<Profile>({})
 
   const rescan = useCallback(async () => {
     setBusy(true)
     try {
-      const [f, s] = await Promise.all([
+      const [f, s, hw, profiles] = await Promise.all([
         api()?.models.folders(),
         api()?.models.scan(),
+        api()?.server.hardware(),
+        api()?.profiles.get(),
       ])
       if (f) setFolders(f)
       if (s) setScan(s)
+      if (hw) setHardware(hw)
+      if (profiles) {
+        const p = profiles.profiles.find((x) => x.id === profiles.defaultProfileId)
+        if (p) setProfile(p.values)
+      }
     } finally {
       setBusy(false)
     }
@@ -61,6 +77,27 @@ export function Models(): JSX.Element {
         }
       />
 
+      <div className="mt-5">
+        <Segmented
+          value={tab}
+          options={[
+            { value: 'local' as const, label: t('models.folders') },
+            { value: 'hf' as const, label: t('hf.tab') },
+          ]}
+          onChange={setTab}
+        />
+      </div>
+
+      {tab === 'hf' ? (
+        <div className="mt-6">
+          <HuggingFace
+            hardware={hardware}
+            profile={profile}
+            onDownloaded={rescan}
+          />
+        </div>
+      ) : (
+        <>
       <Section title={t('models.folders')}>
         {folders.length === 0 ? (
           <Empty>{t('models.empty')}</Empty>
@@ -113,6 +150,8 @@ export function Models(): JSX.Element {
           </Card>
         </Section>
       ) : null}
+        </>
+      )}
     </div>
   )
 }

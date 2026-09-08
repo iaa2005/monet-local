@@ -1,14 +1,13 @@
 import { useEffect } from 'react'
-import { BarChart3 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Sidebar } from '@/components/Sidebar'
 import {
   MacTrafficLightInset,
   WindowControls,
 } from '@/components/WindowControls'
+import { Benchmark } from '@/screens/Benchmark'
 import { Integrations } from '@/screens/Integrations'
 import { Models } from '@/screens/Models'
-import { Placeholder } from '@/screens/Placeholder'
 import { Runtimes } from '@/screens/Runtimes'
 import { Server as ServerScreen } from '@/screens/Server'
 import { Settings } from '@/screens/Settings'
@@ -76,9 +75,7 @@ function Screen({ id }: { id: Exclude<ScreenId, 'settings'> }): JSX.Element {
     case 'runtimes':
       return <Runtimes />
     case 'benchmark':
-      return (
-        <Placeholder title="benchmark.title" blurb="benchmark.blurb" Icon={BarChart3} />
-      )
+      return <Benchmark />
     case 'integrations':
       return <Integrations />
   }

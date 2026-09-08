@@ -34,7 +34,16 @@ network toggle. `/v1/models` lists only what is loaded. An end-to-end test
 loads a real 16 GB model and checks a completion, a streamed completion and an
 Anthropic message all come back through it.
 
-Next: M4 — the Monet Local provider inside Code Monet.
+**M4 — the provider inside Code Monet. Done** (in the `monet` repo): a
+provider kind whose model list is live, carrying each model's real context and
+modalities instead of guesses.
+
+**M5 — benchmark and the Hugging Face downloader. Done.** Two profiles
+measured against each other with the memory-bandwidth ceiling shown beside
+them, and a downloader that resumes and never lands a partial file in a model
+folder.
+
+Next: M6 — updater, polish, and the first release.
 
 ## Develop
 
