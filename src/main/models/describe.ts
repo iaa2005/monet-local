@@ -60,6 +60,61 @@ export function modelId(fileName: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
+/**
+ * A filename with the packaging taken off: the quantisation, the split
+ * suffix, a trailing -GGUF.
+ */
+function stem(fileName: string): string {
+  return fileName
+    .replace(/\.gguf$/i, '')
+    .replace(/-\d{5}-of-\d{5}$/i, '')
+    .replace(
+      /[-._](UD[-_])?(I?Q\d[_A-Z0-9]*|BF16|FP?16|FP?32|MXFP\d|TQ\d[_A-Z0-9]*)$/i,
+      '',
+    )
+    .replace(/[-._]GGUF$/i, '')
+}
+
+/** `ggml-model-q4_0.gguf` and friends: a name that identifies nothing. */
+const GENERIC = /^(ggml[-._])?model([-._]|$)/i
+
+/**
+ * `Qwen_Qwen3.8 27B` — the converter's separator between the repo owner and
+ * the model. Dropped only when the owner is repeated in what follows, which
+ * is pure duplication and cannot lose information; `phi_4_mini` keeps its
+ * underscore because `4_mini` is not a name.
+ */
+function withoutRepeatedOwner(name: string): string {
+  const m = /^([A-Za-z][A-Za-z0-9.]*)_(.+)$/.exec(name)
+  if (!m) return name
+  const [, owner, rest] = m as unknown as [string, string, string]
+  return rest.toLowerCase().startsWith(owner.toLowerCase()) ? rest : name
+}
+
+/**
+ * What to call a model.
+ *
+ * `general.name` is written by whatever converted the model, and the common
+ * converters build it out of the Hugging Face repo id: `openai/gpt-oss-20b`
+ * arrives as "Openai_Gpt Oss 20b", `Qwen/Qwen3.8-27B` as "Qwen_Qwen3.8 27B".
+ * The owner is duplicated, the hyphens are gone and every word has been
+ * title-cased, so a model nobody writes that way is displayed that way.
+ *
+ * The FILE name came through that trip intact — it is what the publisher
+ * called the thing — so it wins. Metadata is the fallback for a file named
+ * something that identifies nothing.
+ *
+ * No case is invented on top of either: "gpt-oss-20b" is how OpenAI writes
+ * it, and a rule that capitalised the first letter would be wrong exactly
+ * where it showed.
+ */
+export function displayNameFor(fileName: string, metaName?: string): string {
+  const fromFile = withoutRepeatedOwner(stem(fileName))
+  if (fromFile && !GENERIC.test(fromFile)) return fromFile
+  const fromMeta = metaName ? withoutRepeatedOwner(metaName.trim()) : ''
+  return fromMeta || fromFile || fileName
+}
+
 export function describeModel(
   path: string,
   header: GgufHeader,
@@ -117,7 +172,7 @@ export function describeModel(
     fileName,
     sizeBytes: header.fileSize,
     architecture: arch,
-    displayName: str(kv, 'general.name') ?? fileName.replace(/\.gguf$/i, ''),
+    displayName: displayNameFor(fileName, str(kv, 'general.name')),
     quant,
     ...(num(kv, `${arch}.context_length`) !== undefined
       ? { contextMax: num(kv, `${arch}.context_length`)! }

@@ -206,3 +206,17 @@ entity the UI presents as a configuration. Keep user-facing strings on
 
 Assignment is per model id, which is per file, so per quant — Q4 and Q6 of one
 model do not fit the same way and do not share settings unless asked to.
+
+## `general.name` is not the model's name
+
+The common GGUF converters build it out of the Hugging Face repo id, and it
+arrives mangled: `openai/gpt-oss-20b` becomes `Openai_Gpt Oss 20b`,
+`Qwen/Qwen3.8-27B` becomes `Qwen_Qwen3.8 27B` — owner duplicated, hyphens
+gone, every word title-cased. The FILE name survives that trip, so
+`displayNameFor` takes the filename with the packaging stripped
+(quantisation, `-NNNNN-of-NNNNN`, a trailing `-GGUF`) and falls back to
+metadata only for a file named something that identifies nothing
+(`ggml-model-q4_0.gguf`).
+
+Invent no capitals on top of either. A rule that title-cased the first letter
+would be wrong exactly where it showed: OpenAI writes it "gpt-oss".
