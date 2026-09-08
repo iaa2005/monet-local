@@ -217,27 +217,19 @@ export function Server(): JSX.Element {
           The number is the large thing; the label stays out of its way. */}
       <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div className="rounded-xl border border-border bg-card px-4 py-3">
-          <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
-            {t('server.title')}
-          </div>
-          <div
-            className={cn(
-              'mt-0.5 flex items-center gap-2 font-display text-[22px] font-semibold leading-none tracking-tight',
-              running ? 'text-green-text' : status?.state === 'failed' ? 'text-red-text' : '',
-            )}
-          >
-            <span
-              className={cn(
-                'size-2.5 rounded-full',
-                running
-                  ? 'bg-green-text'
-                  : status?.state === 'failed'
-                    ? 'bg-red-text'
-                    : 'bg-muted-foreground',
-              )}
-            />
-            {t(`server.state.${status?.state ?? 'stopped'}` as StringKey)}
-          </div>
+          {/* No status light. The word already says it and the colour
+              backs it up; a dot in front of the value was the one thing on
+              this row that pushed its text out of line with the other
+              three tiles. */}
+          <Stat
+            label={t('server.title')}
+            value={t(`server.state.${status?.state ?? 'stopped'}` as StringKey)}
+            {...(running
+              ? { tone: 'ok' as const }
+              : status?.state === 'failed'
+                ? { tone: 'bad' as const }
+                : {})}
+          />
         </div>
         <div className="rounded-xl border border-border bg-card px-4 py-3">
           {/* The gateway's port, not the router's. The router sits on
