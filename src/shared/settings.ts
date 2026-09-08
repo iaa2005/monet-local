@@ -28,6 +28,8 @@ export interface AppSettings {
   networkAccess: boolean
   /** Required when networkAccess is on. */
   apiKey?: string
+  /** Hugging Face token, for repositories behind a licence click. */
+  hfToken?: string
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -62,5 +64,6 @@ export function parseSettings(raw: unknown): AppSettings {
     port,
     networkAccess: o.networkAccess === true,
     ...(typeof o.apiKey === 'string' ? { apiKey: o.apiKey } : {}),
+    ...(typeof o.hfToken === 'string' ? { hfToken: o.hfToken } : {}),
   }
 }

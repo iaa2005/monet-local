@@ -6,6 +6,7 @@ import { ensureDirs } from '../app/settings-store.js'
 import { registerModelIpc } from './models.js'
 import { registerRuntimeIpc } from './runtimes.js'
 import { registerServerIpc } from './server.js'
+import { registerBenchIpc } from './bench.js'
 
 /**
  * Every IPC handler the app has so far. One file while it is this small; it
@@ -16,6 +17,7 @@ export function registerIpc(): void {
   registerRuntimeIpc()
   registerModelIpc()
   registerServerIpc()
+  registerBenchIpc()
 
   ipcMain.handle('win:minimize', () => getMainWindow()?.minimize())
   ipcMain.handle('win:toggleMaximize', () => {
