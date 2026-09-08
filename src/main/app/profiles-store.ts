@@ -102,6 +102,46 @@ export function writeProfiles(next: ProfilesFile): ProfilesFile {
   return cached
 }
 
+/** The id a model's own profile gets. One per model file, so per quant. */
+export function ownProfileId(modelId: string): string {
+  return `model:${modelId}`
+}
+
+/**
+ * Save settings for one model.
+ *
+ * The first edit forks. A model normally starts on a shared profile — one of
+ * the built-ins — and writing straight into that would silently change every
+ * other model using it, which is not what editing the settings in front of
+ * one model means. So the model gets a profile of its own, named after it,
+ * and the assignment moves there.
+ */
+export function setProfileFor(
+  modelId: string,
+  values: Profile,
+  name: string,
+): ProfilesFile {
+  const f = readProfiles()
+  const id = ownProfileId(modelId)
+  const existing = f.profiles.some((p) => p.id === id)
+  return writeProfiles({
+    ...f,
+    profiles: existing
+      ? f.profiles.map((p) => (p.id === id ? { ...p, name, values } : p))
+      : [...f.profiles, { id, name, values }],
+    assignments: { ...f.assignments, [modelId]: id },
+  })
+}
+
+/** Point a model at an existing profile — a built-in, or another model's. */
+export function assignProfile(modelId: string, profileId: string): ProfilesFile {
+  const f = readProfiles()
+  return writeProfiles({
+    ...f,
+    assignments: { ...f.assignments, [modelId]: profileId },
+  })
+}
+
 export function profileFor(modelId: string): NamedProfile {
   const f = readProfiles()
   const id = f.assignments[modelId] ?? f.defaultProfileId

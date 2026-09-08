@@ -72,6 +72,9 @@ export class Router {
   private stateValue: RouterState = 'stopped'
   private lastError: string | undefined
   private readonly listeners = new Set<(s: RouterStatus) => void>()
+  private poll: NodeJS.Timeout | null = null
+  private modelsKey = ''
+  private startedEntries: RouterEntry[] = []
 
   constructor(
     private readonly serverPath: string,
@@ -85,6 +88,15 @@ export class Router {
   /** The llama-server we spawned, so it is not mistaken for someone else's. */
   get pid(): number | undefined {
     return this.child?.pid
+  }
+
+  /**
+   * The entries this router was started with — which is what it is actually
+   * running. llama.cpp reads the preset file once, at startup, so a profile
+   * edited afterwards is not what is loaded, and this is what says so.
+   */
+  get running(): RouterEntry[] {
+    return this.startedEntries
   }
 
   onChange(cb: (s: RouterStatus) => void): () => void {
@@ -115,6 +127,7 @@ export class Router {
   async start(entries: RouterEntry[]): Promise<void> {
     if (this.child) await this.stop()
     const preset = this.writePreset(entries)
+    this.startedEntries = entries
 
     const args = [
       '--models-preset',
@@ -155,6 +168,7 @@ export class Router {
     child.on('exit', (code) => {
       log.end()
       this.child = null
+      this.stopPolling()
       if (this.stateValue !== 'stopping') {
         this.setState(
           'failed',
@@ -166,6 +180,59 @@ export class Router {
     })
 
     await this.waitForReady()
+    this.startPolling()
+  }
+
+  /**
+   * Ask what is loaded, repeatedly.
+   *
+   * llama.cpp's router has no event stream, and both commands answer 200
+   * before anything has happened: measured here, a load reports `loading`
+   * for about ten seconds on an 8 GB model, and an unload keeps reporting
+   * `loaded` for about two. Without this the screen went on offering Unload
+   * for a model that was already gone, and the second click came back with
+   * "model is not running".
+   */
+  private startPolling(): void {
+    this.stopPolling()
+    this.poll = setInterval(() => void this.pollOnce(), 1000)
+  }
+
+  private stopPolling(): void {
+    if (this.poll) clearInterval(this.poll)
+    this.poll = null
+    this.modelsKey = ''
+  }
+
+  private async pollOnce(): Promise<void> {
+    if (this.stateValue !== 'ready') return
+    const s = await this.status()
+    // Only when something actually moved: a status push per second would
+    // re-render the screen for no reason.
+    const key = s.models.map((m) => `${m.id}:${m.status}`).join(',')
+    if (key === this.modelsKey) return
+    this.modelsKey = key
+    for (const cb of this.listeners) cb(s)
+  }
+
+  /** Wait for a model to reach a settled state, or say why it did not. */
+  private async settle(
+    model: string,
+    want: 'loaded' | 'unloaded',
+    timeoutMs: number,
+  ): Promise<void> {
+    const deadline = Date.now() + timeoutMs
+    let moved = false
+    while (Date.now() < deadline) {
+      const v = (await this.status()).models.find((m) => m.id === model)?.status
+      if (v === want) return
+      // `loading` is the only transitional value llama.cpp reports; an
+      // unload simply keeps saying `loaded` until it does not.
+      if (v === 'loading') moved = true
+      else if (moved) throw new Error(`${model} ended up ${v}, not ${want}`)
+      await new Promise((r) => setTimeout(r, 400))
+    }
+    throw new Error(`${model} did not become ${want} in time`)
   }
 
   private async waitForReady(timeoutMs = 60_000): Promise<void> {
@@ -246,16 +313,26 @@ export class Router {
     void this.announce()
   }
 
-  /** Asynchronous: the model goes to `loading` and the status stream follows. */
+  /**
+   * Returns as soon as the router has accepted it. Loading a large model
+   * takes minutes; the poll above is what moves the screen from `loading`
+   * to `loaded`.
+   */
   load(model: string): Promise<void> {
     return this.command('/models/load', model)
   }
 
-  unload(model: string): Promise<void> {
-    return this.command('/models/unload', model)
+  /**
+   * Waits, unlike load. It is quick (about two seconds), and returning
+   * early is what let a second click reach a model that was already gone.
+   */
+  async unload(model: string): Promise<void> {
+    await this.command('/models/unload', model)
+    await this.settle(model, 'unloaded', 60_000)
   }
 
   async stop(): Promise<void> {
+    this.stopPolling()
     const child = this.child
     if (!child) {
       this.setState('stopped')

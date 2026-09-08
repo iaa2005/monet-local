@@ -110,6 +110,13 @@ export const en = {
   'server.strays':
     'llama-server is already running outside Monet Local. Two of them will fight over the same memory.',
   'server.killStray': 'Stop it',
+  'server.pending': 'Settings changed',
+  'server.pendingHelp':
+    'llama.cpp fixes a model’s settings when it loads it, and reads its preset file only at startup. Applying restarts the server and loads the same models again.',
+  'server.apply': 'Apply',
+  'server.applying': 'Applying…',
+  'server.changed': 'changed',
+  'server.basedOn': 'Profile',
   'server.command': 'Command',
   'server.profile': 'Profile',
 
@@ -319,6 +326,13 @@ export const ru: Record<StringKey, string> = {
   'server.strays':
     'llama-server уже запущен вне Monet Local.Два процесса будут драться за одну память.',
   'server.killStray': 'Остановить его',
+  'server.pending': 'Настройки изменены',
+  'server.pendingHelp':
+    'llama.cpp фиксирует настройки модели в момент загрузки, а файл пресетов читает только при старте. Применение перезапустит сервер и загрузит те же модели заново.',
+  'server.apply': 'Применить',
+  'server.applying': 'Применяю…',
+  'server.changed': 'изменено',
+  'server.basedOn': 'Профиль',
   'server.command': 'Команда',
   'server.profile': 'Профиль',
 

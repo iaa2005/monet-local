@@ -156,6 +156,8 @@ const api = {
     hardware: (): Promise<Hardware> => ipcRenderer.invoke('server:hardware'),
     start: (): Promise<RouterStatus> => ipcRenderer.invoke('server:start'),
     stop: (): Promise<RouterStatus> => ipcRenderer.invoke('server:stop'),
+    pending: (): Promise<string[]> => ipcRenderer.invoke('server:pending'),
+    apply: (): Promise<RouterStatus> => ipcRenderer.invoke('server:apply'),
     load: (id: string): Promise<void> => ipcRenderer.invoke('server:load', id),
     unload: (id: string): Promise<void> =>
       ipcRenderer.invoke('server:unload', id),
@@ -214,6 +216,15 @@ const api = {
     get: (): Promise<ProfilesFile> => ipcRenderer.invoke('profiles:get'),
     set: (next: ProfilesFile): Promise<ProfilesFile> =>
       ipcRenderer.invoke('profiles:set', next),
+    /** Save settings for one model; forks a profile of its own on first use. */
+    setFor: (
+      modelId: string,
+      values: Profile,
+      name: string,
+    ): Promise<ProfilesFile> =>
+      ipcRenderer.invoke('profiles:setFor', modelId, values, name),
+    assign: (modelId: string, profileId: string): Promise<ProfilesFile> =>
+      ipcRenderer.invoke('profiles:assign', modelId, profileId),
   },
 
   prefs: {

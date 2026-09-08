@@ -216,4 +216,39 @@ describe.skipIf(!enabled)('end to end, through the gateway', () => {
     }
     expect(model!['modalities']).toContain('text')
   })
+
+  it('reports the model unloaded once unload returns', async () => {
+    // The bug this is for: llama.cpp answers 200 on /models/unload about two
+    // seconds before it stops reporting the model as loaded. Returning on
+    // the 200 left the screen offering Unload for a model that was already
+    // gone, and the second click came back 400 "model is not running".
+    await router.unload(modelId)
+
+    const after = await router.status()
+    expect(after.models.find((m) => m.id === modelId)?.status).toBe('unloaded')
+
+    // And the state the screen reads is settled enough that acting on it is
+    // not a race: a second unload is refused, which is what the button must
+    // no longer be able to ask for.
+    await expect(router.unload(modelId)).rejects.toThrow()
+  })
+
+  it('loads it again, and the poll reports the change', async () => {
+    const seen: string[] = []
+    const off = router.onChange((s) => {
+      const v = s.models.find((m) => m.id === modelId)?.status
+      if (v && seen[seen.length - 1] !== v) seen.push(v)
+    })
+    await router.load(modelId)
+    // load() returns as soon as the router accepts it; nothing but the poll
+    // moves the screen on from there.
+    for (let i = 0; i < 300; i++) {
+      const v = (await router.status()).models.find((m) => m.id === modelId)
+      if (v?.status === 'loaded') break
+      await new Promise((r) => setTimeout(r, 400))
+    }
+    off()
+    expect(seen).toContain('loaded')
+  }, 180_000)
+
 })

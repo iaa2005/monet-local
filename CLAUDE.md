@@ -165,3 +165,31 @@ next Load failed with `llama-server exited with code 1` pointing at nothing
 the user had done wrong. Use CIM, not `tasklist`: tasklist reports no parent,
 and without parents there is no way to tell our own model children from
 someone else's server.
+
+## The router's load and unload are both asynchronous
+
+Measured against the real binary: `POST /models/load` and `/models/unload`
+each answer `200 {"success":true}` before anything has happened. An 8 GB
+model reports `loading` for about ten seconds; an unload keeps reporting
+`loaded` for about two. There is no event stream, so the Router polls
+`/models` once a second while it is ready and pushes only when a status
+actually changed.
+
+`unload` waits for the model to settle; `load` does not, because a large
+model takes minutes and the poll is what moves the screen on. Returning
+early from an unload is what let a second click reach a model that was
+already gone — `400 model is not running`.
+
+## Settings reach a model only when it is loaded, and only from the preset
+
+llama.cpp reads `--models-preset` once, at startup, and **ignores arguments
+passed in a `/models/load` body** — measured: it answers 200 and loads the
+preset's values anyway. So an edited profile changes nothing until the router
+is restarted. Editing therefore only ever saves; `server:apply` is the
+explicit action that restarts the router and reloads what was loaded. Never
+apply on change: settings arrive a keystroke at a time and each apply
+reloads a model.
+
+Each model (so each quant — model ids are per file) carries its own profile.
+The first edit **forks**: a model sitting on a shared built-in gets a profile
+of its own rather than rewriting one that other models are using.

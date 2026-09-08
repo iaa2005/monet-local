@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Play, Square } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Play, RotateCw, Square } from 'lucide-react'
 import type { Estimate } from '@shared/estimator.js'
 import type { StringKey } from '@shared/i18n.js'
 import type { Hardware, Profile } from '@shared/flags/types.js'
@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 import { useT } from '@/stores/uiStore'
 import type {
   ModelInfo,
+  ProfilesFile,
   RouterStatus,
   StrayProcess,
 } from '../../preload/index.js'
@@ -28,34 +29,46 @@ export function Server(): JSX.Element {
   })
   const [strays, setStrays] = useState<StrayProcess[]>([])
   const [selected, setSelected] = useState<string | null>(null)
+  const [profiles, setProfiles] = useState<ProfilesFile | null>(null)
   const [values, setValues] = useState<Profile>({})
+  /** Models configured differently from what the router is actually running. */
+  const [pending, setPending] = useState<string[]>([])
   const [estimate, setEstimate] = useState<Estimate | null>(null)
   const [command, setCommand] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const refresh = useCallback(async () => {
-    const [s, scan, hw, str, profiles] = await Promise.all([
+    const [s, scan, hw, str, p, pend] = await Promise.all([
       api()?.server.status(),
       api()?.models.scan(),
       api()?.server.hardware(),
       api()?.server.strays(),
       api()?.profiles.get(),
+      api()?.server.pending(),
     ])
     if (s) setStatus(s)
     if (hw) setHardware(hw)
     if (str) setStrays(str)
+    if (p) setProfiles(p)
+    if (pend) setPending(pend)
     if (scan) {
       setModels(scan.models)
       setSelected((cur) => cur ?? scan.models[0]?.id ?? null)
     }
-    if (profiles) {
-      const p = profiles.profiles.find(
-        (x) => x.id === profiles.defaultProfileId,
-      )
-      setValues((cur) => (Object.keys(cur).length ? cur : (p?.values ?? {})))
-    }
   }, [])
+
+  /**
+   * The settings on screen belong to the selected model, not to whatever
+   * profile happens to be the default — each model, so each quant, carries
+   * its own.
+   */
+  useEffect(() => {
+    if (!selected || !profiles) return
+    const id = profiles.assignments[selected] ?? profiles.defaultProfileId
+    setValues(profiles.profiles.find((x) => x.id === id)?.values ?? {})
+  }, [selected, profiles])
 
   useEffect(() => {
     void refresh()
@@ -79,6 +92,30 @@ export function Server(): JSX.Element {
       cancelled = true
     }
   }, [selected, values])
+
+  /**
+   * Save the edit; do not apply it.
+   *
+   * Debounced because these arrive a keystroke at a time. Saved and not
+   * applied because applying means reloading the model — llama.cpp fixes a
+   * model's arguments when it loads it — and doing that per keystroke is
+   * not something anyone wants. The banner is how it gets applied.
+   */
+  const edit = (next: Profile): void => {
+    setValues(next)
+    const id = selected
+    const name = models.find((m) => m.id === id)?.displayName
+    if (!id || !name) return
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      void (async () => {
+        const p = await api()?.profiles.setFor(id, next, name)
+        if (p) setProfiles(p)
+        const pend = await api()?.server.pending()
+        if (pend) setPending(pend)
+      })()
+    }, 400)
+  }
 
   const guard = async (fn: () => Promise<unknown>): Promise<void> => {
     setBusy(true)
@@ -204,6 +241,30 @@ export function Server(): JSX.Element {
         </div>
       ) : null}
 
+      {/* Manual, and it says why it has to be: llama.cpp reads its preset
+          file once at startup and ignores arguments handed to a load, so
+          nothing an edit does can reach a running server without this. */}
+      {pending.length > 0 && running ? (
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-brand-edge bg-brand-wash px-4 py-3">
+          <div className="min-w-0">
+            <div className="text-sm font-medium">{t('server.pending')}</div>
+            <p className="mt-0.5 max-w-prose text-xs text-muted-foreground">
+              {t('server.pendingHelp')}
+            </p>
+          </div>
+          <div className="flex-1" />
+          <Button
+            size="sm"
+            variant="brand"
+            disabled={busy}
+            onClick={() => void guard(() => api()!.server.apply())}
+          >
+            <RotateCw className="mr-2 size-3.5" />
+            {busy ? t('server.applying') : t('server.apply')}
+          </Button>
+        </div>
+      ) : null}
+
       <Section title={t('models.title')}>
         {models.length === 0 ? (
           <Empty>{t('server.noModels')}</Empty>
@@ -230,6 +291,11 @@ export function Server(): JSX.Element {
                 <Badge>{bytes(m.sizeBytes, 1)}</Badge>
                 {loaded.has(m.id) ? (
                   <Badge tone="ok">{t('server.loaded')}</Badge>
+                ) : null}
+                {pending.includes(m.id) && running ? (
+                  <Badge tone="warn" title={t('server.pendingHelp')}>
+                    {t('server.changed')}
+                  </Badge>
                 ) : null}
                 <div className="flex-1" />
                 {running ? (
@@ -284,17 +350,47 @@ export function Server(): JSX.Element {
                 next['cacheTypeK'] = 'q8_0'
                 next['cacheTypeV'] = 'q4_0'
               }
-              setValues(next)
+              edit(next)
             }}
           />
-          <div className="mt-6">
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              {t('server.basedOn')}
+            </span>
+            {/* Which saved profile this model starts from. The next edit
+                forks it into one that belongs to this model alone, so
+                changing a shared profile's values here cannot quietly
+                change every other model using it. */}
+            <select
+              className="h-9 rounded-lg border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={
+                profiles?.assignments[selected] ?? profiles?.defaultProfileId ?? ''
+              }
+              onChange={(e) =>
+                void (async () => {
+                  const p = await api()?.profiles.assign(selected, e.target.value)
+                  if (p) setProfiles(p)
+                  const pend = await api()?.server.pending()
+                  if (pend) setPending(pend)
+                })()
+              }
+            >
+              {(profiles?.profiles ?? []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="mt-4">
             <ProfilePanel
               values={values}
               hardware={hardware}
               effective={{
                 mmprojPath: models.find((m) => m.id === selected)?.mmprojPath,
               }}
-              onChange={setValues}
+              onChange={edit}
             />
           </div>
           <div className="mt-8">

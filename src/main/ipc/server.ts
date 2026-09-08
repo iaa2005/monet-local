@@ -6,8 +6,10 @@ import { buildArgs, previewCommand } from '@shared/flags/build.js'
 import type { Hardware, Profile } from '@shared/flags/types.js'
 import { getMainWindow } from '../app/main-window.js'
 import {
+  assignProfile,
   profileFor,
   readProfiles,
+  setProfileFor,
   writeProfiles,
   type ProfilesFile,
 } from '../app/profiles-store.js'
@@ -76,6 +78,27 @@ function entries(): RouterEntry[] {
     modelPath: m.path,
     ...(m.mmprojPath ? { mmprojPath: m.mmprojPath } : {}),
   }))
+}
+
+/**
+ * Which models are configured differently from what the router is running.
+ *
+ * llama.cpp reads its preset file once, at startup, and ignores arguments
+ * passed to /models/load — measured: it answers 200 and loads the old ones.
+ * So an edited profile changes nothing until the router is restarted, and
+ * this is what lets the screen say so instead of pretending otherwise.
+ */
+function pendingModels(): string[] {
+  if (!router) return []
+  const running = new Map(router.running.map((e) => [e.id, e.profile]))
+  return entries()
+    .filter((e) => {
+      const was = running.get(e.id)
+      // A model added since the router started is not "changed"; it simply
+      // is not in the preset the router read, which is the same problem.
+      return was === undefined || JSON.stringify(was) !== JSON.stringify(e.profile)
+    })
+    .map((e) => e.id)
 }
 
 function push(): void {
@@ -201,7 +224,37 @@ export function registerServerIpc(): void {
     },
   )
 
+  ipcMain.handle('server:pending', () => pendingModels())
+
+  /**
+   * Put the edited settings into effect, when the user asks and not before.
+   *
+   * Deliberately manual: settings are edited a keystroke at a time, and a
+   * server that reloaded a 16 GB model on each one would be unusable. The
+   * restart is the only mechanism there is — the preset file is read at
+   * startup — so it reloads whatever was loaded before, and says as much.
+   */
+  ipcMain.handle('server:apply', async () => {
+    if (!router) throw new Error('server is not running')
+    const before = (await router.status()).models
+      .filter((m) => m.status === 'loaded')
+      .map((m) => m.id)
+    await router.start(entries())
+    for (const id of before) await router.load(id)
+    push()
+    statusCache = await router.status()
+    return statusCache
+  })
+
   ipcMain.handle('profiles:get', () => readProfiles())
+  ipcMain.handle(
+    'profiles:setFor',
+    (_e, modelId: string, values: Profile, name: string) =>
+      setProfileFor(modelId, values, name),
+  )
+  ipcMain.handle('profiles:assign', (_e, modelId: string, profileId: string) =>
+    assignProfile(modelId, profileId),
+  )
   ipcMain.handle('profiles:set', (_e, next: ProfilesFile) =>
     writeProfiles(next),
   )
