@@ -1,1 +1,72 @@
-{"message":"API rate limit exceeded for 185.77.216.16. (But here's the good news: Authenticated requests get a higher rate limit. Check out the documentation for more details.)","documentation_url":"https://docs.github.com/rest/overview/resources-in-the-rest-api#rate-limiting"}
+{
+  "_note": "Reconstructed from GitHub API output captured 2026-09-06 (re-fetch hit the rate limit). Sizes approximate (MB*1048576). Windows assets only; the real release also carries macOS/Linux zips.",
+  "tag_name": "b10826",
+  "published_at": "2026-09-06T16:40:14Z",
+  "assets": [
+    {
+      "name": "cudart-llama-bin-win-cuda-12.4-x64.zip",
+      "size": 391118848,
+      "browser_download_url": "https://github.com/ggml-org/llama.cpp/releases/download/b10826/cudart-llama-bin-win-cuda-12.4-x64.zip"
+    },
+    {
+      "name": "cudart-llama-bin-win-cuda-13.3-x64.zip",
+      "size": 390070272,
+      "browser_download_url": "https://github.com/ggml-org/llama.cpp/releases/download/b10826/cudart-llama-bin-win-cuda-13.3-x64.zip"
+    },
+    {
+      "name": "cudart-llama-bin-win-cuda-13.4-arm64.zip",
+      "size": 153092096,
+      "browser_download_url": "https://github.com/ggml-org/llama.cpp/releases/download/b10826/cudart-llama-bin-win-cuda-13.4-arm64.zip"
+    },
+    {
+      "name": "llama-b10826-bin-win-cpu-arm64.zip",
+      "size": 11534336,
+      "browser_download_url": "https://github.com/ggml-org/llama.cpp/releases/download/b10826/llama-b10826-bin-win-cpu-arm64.zip"
+    },
+    {
+      "name": "llama-b10826-bin-win-cpu-x64.zip",
+      "size": 17825792,
+      "browser_download_url": "https://github.com/ggml-org/llama.cpp/releases/download/b10826/llama-b10826-bin-win-cpu-x64.zip"
+    },
+    {
+      "name": "llama-b10826-bin-win-cuda-12.4-x64.zip",
+      "size": 253755392,
+      "browser_download_url": "https://github.com/ggml-org/llama.cpp/releases/download/b10826/llama-b10826-bin-win-cuda-12.4-x64.zip"
+    },
+    {
+      "name": "llama-b10826-bin-win-cuda-13.3-x64.zip",
+      "size": 148897792,
+      "browser_download_url": "https://github.com/ggml-org/llama.cpp/releases/download/b10826/llama-b10826-bin-win-cuda-13.3-x64.zip"
+    },
+    {
+      "name": "llama-b10826-bin-win-cuda-13.4-arm64.zip",
+      "size": 142606336,
+      "browser_download_url": "https://github.com/ggml-org/llama.cpp/releases/download/b10826/llama-b10826-bin-win-cuda-13.4-arm64.zip"
+    },
+    {
+      "name": "llama-b10826-bin-win-opencl-adreno-arm64.zip",
+      "size": 12582912,
+      "browser_download_url": "https://github.com/ggml-org/llama.cpp/releases/download/b10826/llama-b10826-bin-win-opencl-adreno-arm64.zip"
+    },
+    {
+      "name": "llama-b10826-bin-win-openvino-2026.3.1-x64.zip",
+      "size": 79691776,
+      "browser_download_url": "https://github.com/ggml-org/llama.cpp/releases/download/b10826/llama-b10826-bin-win-openvino-2026.3.1-x64.zip"
+    },
+    {
+      "name": "llama-b10826-bin-win-rocm-10.0-x64.zip",
+      "size": 243269632,
+      "browser_download_url": "https://github.com/ggml-org/llama.cpp/releases/download/b10826/llama-b10826-bin-win-rocm-10.0-x64.zip"
+    },
+    {
+      "name": "llama-b10826-bin-win-sycl-x64.zip",
+      "size": 119537664,
+      "browser_download_url": "https://github.com/ggml-org/llama.cpp/releases/download/b10826/llama-b10826-bin-win-sycl-x64.zip"
+    },
+    {
+      "name": "llama-b10826-bin-win-vulkan-x64.zip",
+      "size": 34603008,
+      "browser_download_url": "https://github.com/ggml-org/llama.cpp/releases/download/b10826/llama-b10826-bin-win-vulkan-x64.zip"
+    }
+  ]
+}
