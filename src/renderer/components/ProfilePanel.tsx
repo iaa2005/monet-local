@@ -5,10 +5,12 @@ import type {
   FlagDef,
   FlagLevel,
   Hardware,
+  IntFlag,
   Profile,
 } from '@shared/flags/types.js'
+import { tokens } from '@shared/format.js'
 import type { StringKey } from '@shared/i18n.js'
-import { ContextSlider } from '@/components/ui/context-slider'
+import { NumberSlider } from '@/components/ui/number-slider'
 import { Segmented } from '@/components/ui/segmented'
 import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/page'
@@ -27,8 +29,27 @@ const LEVELS: FlagLevel[] = ['basic', 'advanced', 'expert']
 export interface Effective {
   /** The projector the library found beside the selected model. */
   mmprojPath?: string
-  /** The selected model's advertised ceiling — the slider's top end. */
+  /** The selected model's advertised ceiling — the context slider's top. */
   contextMax?: number
+  /** What this machine has, so the threads dial stops at the real number. */
+  cpuThreads?: number
+  /** The model's layers, so "all of them" is where the track ends. */
+  gpuLayers?: number
+}
+
+/**
+ * A dial's real top end.
+ *
+ * The registry can only state a bound that holds everywhere; the useful one
+ * depends on the model in front of the user and on the machine. A threads
+ * slider running to 64 on an eight-core laptop is a worse control than no
+ * slider at all.
+ */
+function ceilingFor(id: string, def: IntFlag, e: Effective): number {
+  if (id === 'ctxSize' && e.contextMax) return e.contextMax
+  if (id === 'threads' && e.cpuThreads) return e.cpuThreads
+  if (id === 'nGpuLayers' && e.gpuLayers) return e.gpuLayers
+  return def.max ?? 4096
 }
 
 /**
@@ -226,14 +247,26 @@ function Control({
   }
 
   if (def.type === 'int' && def.scale) {
-    // A dial, not a ladder. The powers of two are still one click away
-    // underneath, because they are still what most people want — but the
-    // values between them are legal, cost real memory, and were unreachable.
+    // A dial, not a ladder. The marks are still one click away underneath,
+    // because they are still what most people want — but the values between
+    // them are legal, cost real memory, and were unreachable.
+    const min = def.min ?? 0
+    const max = ceilingFor(id, def, effective)
     return (
-      <ContextSlider
-        value={typeof value === 'number' ? value : (def.default as number)}
-        max={effective.contextMax ?? def.max ?? 262144}
+      <NumberSlider
+        value={typeof value === 'number' ? value : undefined}
+        min={min}
+        max={max}
+        {...(def.step !== undefined ? { step: def.step } : {})}
         marks={def.scale}
+        fallback={def.default ?? min}
+        // A flag with no default of its own is llama.cpp's to decide, and
+        // the dial has to be able to hand it back rather than pretending
+        // some position is what "unset" looks like.
+        allowAuto={def.default === undefined}
+        autoLabel={t('flags.auto')}
+        // Token counts read better abbreviated; a thread count does not.
+        format={max >= 1024 ? tokens : String}
         onChange={onChange}
       />
     )

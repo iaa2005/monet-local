@@ -175,6 +175,23 @@ export function Server(): JSX.Element {
     }
   }
 
+  /**
+   * What the machine and the selected model really allow, so the dials in
+   * the panel stop where reality does rather than at a registry bound that
+   * has to hold everywhere.
+   */
+  const chosen = models.find((m) => m.id === selected)
+  const effective = {
+    ...(chosen?.mmprojPath ? { mmprojPath: chosen.mmprojPath } : {}),
+    ...(chosen?.contextMax ? { contextMax: chosen.contextMax } : {}),
+    ...(chosen?.geometry?.blockCount
+      ? { gpuLayers: chosen.geometry.blockCount + 1 }
+      : {}),
+    ...(navigator.hardwareConcurrency
+      ? { cpuThreads: navigator.hardwareConcurrency }
+      : {}),
+  }
+
   const running = status?.state === 'ready'
   const loaded = new Set(
     (status?.models ?? []).filter((m) => m.status === 'loaded').map((m) => m.id),
@@ -519,20 +536,7 @@ export function Server(): JSX.Element {
             <ProfilePanel
               values={values}
               hardware={hardware}
-              effective={{
-                ...(models.find((m) => m.id === selected)?.mmprojPath
-                  ? {
-                      mmprojPath: models.find((m) => m.id === selected)!
-                        .mmprojPath!,
-                    }
-                  : {}),
-                ...(models.find((m) => m.id === selected)?.contextMax
-                  ? {
-                      contextMax: models.find((m) => m.id === selected)!
-                        .contextMax!,
-                    }
-                  : {}),
-              }}
+              effective={effective}
               onChange={edit}
             />
           </div>

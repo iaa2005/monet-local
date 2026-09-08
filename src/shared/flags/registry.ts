@@ -19,6 +19,17 @@ const CONTEXT_STEPS = [
   2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144,
 ]
 
+/**
+ * Marks are the values worth one click, NOT the only legal ones — the whole
+ * point of the slider beside them is that everything between is reachable.
+ * Each list is filtered to the flag's real range before it is drawn, so a
+ * machine with eight threads never offers sixteen.
+ */
+const BATCH_STEPS = [128, 256, 512, 1024, 2048, 4096, 8192]
+const UBATCH_STEPS = [16, 32, 64, 128, 256, 512, 1024, 2048]
+const COUNT_STEPS = [1, 2, 4, 8, 16, 32, 64]
+const LAYER_STEPS = [0, 8, 16, 24, 32, 48, 64, 96, 128]
+
 const KV_TYPES = [
   { value: 'f16', label: 'f16' },
   { value: 'bf16', label: 'bf16' },
@@ -41,6 +52,7 @@ export const FLAGS: Registry = {
     default: 8192,
     min: 512,
     max: 1_048_576,
+    step: 256,
     scale: CONTEXT_STEPS,
     label: { en: 'Context length', ru: 'Длина контекста' },
     help: {
@@ -162,6 +174,8 @@ export const FLAGS: Registry = {
     type: 'int',
     min: 0,
     max: 999,
+    step: 1,
+    scale: LAYER_STEPS,
     label: { en: 'Layers on the GPU', ru: 'Слоёв на видеокарте' },
     help: {
       en: 'Left empty, llama.cpp fits as many as it thinks will hold. Setting it by hand is how you find out the hard way that the last few layers had no room: the server refuses to start rather than falling back. To run on the CPU, use the device setting above — 0 here is not the same thing and can crash the process.',
@@ -382,6 +396,9 @@ export const FLAGS: Registry = {
     level: 'basic',
     type: 'int',
     min: 1,
+    max: 64,
+    step: 1,
+    scale: COUNT_STEPS,
     label: { en: 'CPU threads', ru: 'Потоков CPU' },
     help: {
       en: 'Physical cores is the right answer; hyper-threads usually cost more than they add.',
@@ -395,6 +412,9 @@ export const FLAGS: Registry = {
     level: 'advanced',
     type: 'int',
     min: 32,
+    max: 8192,
+    step: 32,
+    scale: BATCH_STEPS,
     label: { en: 'Batch size', ru: 'Размер пакета' },
     help: {
       en: 'Tokens submitted per prompt-processing step. Bigger is faster and needs a bigger compute buffer.',
@@ -409,6 +429,9 @@ export const FLAGS: Registry = {
     type: 'int',
     default: 256,
     min: 16,
+    max: 2048,
+    step: 16,
+    scale: UBATCH_STEPS,
     label: { en: 'Physical batch size', ru: 'Физический размер пакета' },
     help: {
       en: 'How much of a batch is computed at once. The compute buffer scales with this, so lowering it is the cheapest way to claw back device memory.',
@@ -423,6 +446,9 @@ export const FLAGS: Registry = {
     type: 'int',
     default: 1,
     min: 1,
+    max: 16,
+    step: 1,
+    scale: COUNT_STEPS,
     label: { en: 'Concurrent requests', ru: 'Параллельных запросов' },
     help: {
       en: 'Slots served at once. The context is DIVIDED between them: four slots on a 262144 context give each conversation 65536, while the memory bill stays at the full number.',
