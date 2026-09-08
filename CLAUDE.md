@@ -239,3 +239,19 @@ The router sits on 17172 and is internal. The number a user reads under
 "Port" has to be the one a client connects to (the gateway, 17171) — the
 router's own port honours neither the API key nor the network toggle.
 `RouterStatus.port` is the wrong field for anything user-facing.
+
+## No native `<select>`, and the context is a dial
+
+Windows draws `<select>` in its own font at its own size with its own hover
+colour, so one row of a form built out of them looked nothing like the row
+above it. `components/ui/select.tsx` is the replacement; everything the
+native control gave away for free is paid for there (arrows, Home/End, Enter,
+Escape, click-away, scroll-into-view, opening upwards near the bottom of the
+window). Do not reintroduce a bare `<select>`.
+
+Context length is a log-scaled slider plus a number box, not a ladder of
+powers of two. Linear would put 8192 at three percent of a track reaching
+262144; a log track gives each doubling equal width, which is also how the
+memory cost grows. The powers of two remain as clickable marks under it —
+they are still what most people want — but values between them are legal,
+cost real memory, and used to be unreachable.

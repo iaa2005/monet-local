@@ -306,3 +306,56 @@
         background: transparent;
     }
 }
+
+/**
+ * The context slider.
+ *
+ * A range input is the one control browsers still draw entirely themselves,
+ * and the default is a grey Windows track with a blue thumb — the only blue
+ * anywhere in this app. Both halves have to be spelled out per engine;
+ * Chromium is what Electron runs, and the -moz rules are there so the same
+ * file is not wrong if it is ever opened anywhere else.
+ */
+.ctx-range {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.ctx-range:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 4px;
+  border-radius: var(--radius-sm);
+}
+.ctx-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--muted);
+}
+.ctx-range::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 16px;
+  width: 16px;
+  margin-top: -5px; /* centres a 16px thumb on a 6px track */
+  border-radius: 9999px;
+  background: hsl(var(--brand));
+  border: 2px solid var(--card);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  transition: transform 0.1s ease;
+}
+.ctx-range:active::-webkit-slider-thumb {
+  transform: scale(1.12);
+}
+.ctx-range::-moz-range-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--muted);
+}
+.ctx-range::-moz-range-thumb {
+  height: 16px;
+  width: 16px;
+  border: 2px solid var(--card);
+  border-radius: 9999px;
+  background: hsl(var(--brand));
+}

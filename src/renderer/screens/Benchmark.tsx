@@ -9,6 +9,7 @@ import {
   unsupportedByBench,
 } from '@shared/bench.js'
 import { Button } from '@/components/ui/button'
+import { Select } from '@/components/ui/select'
 import { Badge, Card, Empty, Page, PageHeader, Section, Stat } from '@/components/ui/page'
 import { api } from '@/lib/api'
 import { ipcMessage } from '@/lib/errors'
@@ -63,8 +64,6 @@ export function Benchmark(): JSX.Element {
     }
   }
 
-  const select =
-    'h-9 w-full rounded-lg border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
   // Two runs of the same model are what a comparison is: the newest against
   // the one before it.
@@ -93,33 +92,27 @@ export function Benchmark(): JSX.Element {
             <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
               {t('bench.model')}
             </span>
-            <select
-              className={select}
+            <Select
               value={modelId}
-              onChange={(e) => setModelId(e.target.value)}
-            >
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.displayName} · {m.quant}
-                </option>
-              ))}
-            </select>
+              options={models.map((m) => ({
+                value: m.id,
+                label: `${m.displayName} · ${m.quant}`,
+              }))}
+              onChange={setModelId}
+            />
           </label>
           <label className="flex w-48 flex-col gap-1">
             <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
               {t('bench.profile')}
             </span>
-            <select
-              className={select}
+            <Select
               value={profileId}
-              onChange={(e) => setProfileId(e.target.value)}
-            >
-              {(profiles?.profiles ?? []).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+              options={(profiles?.profiles ?? []).map((p) => ({
+                value: p.id,
+                label: p.name,
+              }))}
+              onChange={setProfileId}
+            />
           </label>
           <Button
             variant="brand"

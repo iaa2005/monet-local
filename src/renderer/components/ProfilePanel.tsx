@@ -8,8 +8,9 @@ import type {
   Profile,
 } from '@shared/flags/types.js'
 import type { StringKey } from '@shared/i18n.js'
-import { tokens } from '@shared/format.js'
+import { ContextSlider } from '@/components/ui/context-slider'
 import { Segmented } from '@/components/ui/segmented'
+import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/page'
 import { cn } from '@/lib/utils'
 import { useT, useUi } from '@/stores/uiStore'
@@ -26,6 +27,8 @@ const LEVELS: FlagLevel[] = ['basic', 'advanced', 'expert']
 export interface Effective {
   /** The projector the library found beside the selected model. */
   mmprojPath?: string
+  /** The selected model's advertised ceiling — the slider's top end. */
+  contextMax?: number
 }
 
 /**
@@ -118,10 +121,20 @@ function Field({
 }): JSX.Element {
   const t = useT()
   const [open, setOpen] = useState(false)
+  // A slider in the narrow right-hand column would be a stub. It gets its
+  // own line under the label instead.
+  const wide = def.type === 'int' && !!def.scale
 
   return (
     <div className="px-4 py-3">
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <div
+        className={cn(
+          'flex flex-wrap gap-x-4 gap-y-2',
+          wide
+            ? 'flex-col items-stretch'
+            : 'items-center justify-between',
+        )}
+      >
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
@@ -198,39 +211,31 @@ function Control({
 
   if (def.type === 'enum') {
     return (
-      <select
-        className={input}
+      <Select
+        className="w-44"
         value={String(value ?? '')}
-        onChange={(e) => onChange(e.target.value || undefined)}
-      >
-        {/* "auto", spelled out: an empty option reads as a missing value,
-            and what it actually means is "llama.cpp decides". */}
-        <option value="">{t('flags.auto')}</option>
-        {def.options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+        onChange={(v) => onChange(v || undefined)}
+        options={[
+          // "auto", spelled out: an empty option reads as a missing value,
+          // and what it actually means is "llama.cpp decides".
+          { value: '', label: t('flags.auto') },
+          ...def.options.map((o) => ({ value: o.value, label: o.label })),
+        ]}
+      />
     )
   }
 
   if (def.type === 'int' && def.scale) {
-    // Context is a ladder, not a free number: the values between the powers
-    // of two are never what anyone wants and every one of them changes the
-    // memory verdict.
+    // A dial, not a ladder. The powers of two are still one click away
+    // underneath, because they are still what most people want — but the
+    // values between them are legal, cost real memory, and were unreachable.
     return (
-      <select
-        className={input}
-        value={String(value ?? '')}
-        onChange={(e) => onChange(Number(e.target.value))}
-      >
-        {def.scale.map((n) => (
-          <option key={n} value={n}>
-            {tokens(n)}
-          </option>
-        ))}
-      </select>
+      <ContextSlider
+        value={typeof value === 'number' ? value : (def.default as number)}
+        max={effective.contextMax ?? def.max ?? 262144}
+        marks={def.scale}
+        onChange={onChange}
+      />
     )
   }
 

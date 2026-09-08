@@ -7,6 +7,7 @@ import { bytes } from '@shared/format.js'
 import { Button } from '@/components/ui/button'
 import { Badge, Card, ClickRow, Empty, Page, PageHeader, Section, Stat } from '@/components/ui/page'
 import { ProfilePanel } from '@/components/ProfilePanel'
+import { Select } from '@/components/ui/select'
 import { Verdict } from '@/components/Verdict'
 import { api } from '@/lib/api'
 import { ipcMessage } from '@/lib/errors'
@@ -45,7 +46,7 @@ export function Server(): JSX.Element {
   const [draftName, setDraftName] = useState('')
   const [armed, setArmed] = useState(false)
 
-  const selectCls =
+  const inputCls =
     'h-9 w-full rounded-lg border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
   const refresh = useCallback(async () => {
@@ -391,7 +392,7 @@ export function Server(): JSX.Element {
                 // one field is a dialog too many.
                 <input
                   autoFocus
-                  className={selectCls}
+                  className={inputCls}
                   value={draftName}
                   onChange={(e) => setDraftName(e.target.value)}
                   onBlur={() => void commitRename()}
@@ -401,23 +402,18 @@ export function Server(): JSX.Element {
                   }}
                 />
               ) : (
-                <select
-                  className={selectCls}
+                <Select
                   value={profileId ?? ''}
-                  onChange={(e) =>
+                  options={(profiles?.profiles ?? []).map((p) => ({
+                    value: p.id,
+                    label: p.name,
+                  }))}
+                  onChange={(v) =>
                     void (async () => {
-                      await reload(
-                        await api()?.profiles.assign(selected, e.target.value),
-                      )
+                      await reload(await api()?.profiles.assign(selected, v))
                     })()
                   }
-                >
-                  {(profiles?.profiles ?? []).map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+                />
               )}
             </div>
             <Button
@@ -524,7 +520,18 @@ export function Server(): JSX.Element {
               values={values}
               hardware={hardware}
               effective={{
-                mmprojPath: models.find((m) => m.id === selected)?.mmprojPath,
+                ...(models.find((m) => m.id === selected)?.mmprojPath
+                  ? {
+                      mmprojPath: models.find((m) => m.id === selected)!
+                        .mmprojPath!,
+                    }
+                  : {}),
+                ...(models.find((m) => m.id === selected)?.contextMax
+                  ? {
+                      contextMax: models.find((m) => m.id === selected)!
+                        .contextMax!,
+                    }
+                  : {}),
               }}
               onChange={edit}
             />
