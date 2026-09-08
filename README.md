@@ -14,9 +14,14 @@ Local model server for Code Monet, built on llama.cpp. A server, not a chat.
 
 **M0 — scaffold. Done.** Electron shell in the Code Monet design with the
 orange brand, English and Russian, light and dark, and a packaged installer.
-The six screens exist; five are placeholders until their milestone.
 
-Next: M1 — runtime packs and the model library.
+**M1 — runtimes and models. Done.** Runtime packs install from a llama.cpp
+release or from a folder of your own; each is probed for what hardware it can
+actually see. The model library reads GGUF headers (never the weights) and
+reports architecture, quantisation, context, MoE-or-dense, vision, an MTP
+head, and what a token of context costs in KV cache.
+
+Next: M2 — the flag registry, the memory estimator, and the router.
 
 ## Develop
 

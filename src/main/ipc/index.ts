@@ -2,12 +2,19 @@ import { ipcMain, nativeTheme } from 'electron'
 import { parsePrefs, type UiPrefs } from '@shared/prefs.js'
 import { canvasFor, getMainWindow } from '../app/main-window.js'
 import { readPrefs, writePrefs } from '../app/prefs-store.js'
+import { ensureDirs } from '../app/settings-store.js'
+import { registerModelIpc } from './models.js'
+import { registerRuntimeIpc } from './runtimes.js'
 
 /**
  * Every IPC handler the app has so far. One file while it is this small; it
  * splits by namespace the moment a second domain (models, runtimes) arrives.
  */
 export function registerIpc(): void {
+  ensureDirs()
+  registerRuntimeIpc()
+  registerModelIpc()
+
   ipcMain.handle('win:minimize', () => getMainWindow()?.minimize())
   ipcMain.handle('win:toggleMaximize', () => {
     const win = getMainWindow()

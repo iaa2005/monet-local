@@ -1,12 +1,14 @@
 import { useEffect } from 'react'
-import { BarChart3, Boxes, Cpu, Plug, Server } from 'lucide-react'
+import { BarChart3, Plug, Server } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Sidebar } from '@/components/Sidebar'
 import {
   MacTrafficLightInset,
   WindowControls,
 } from '@/components/WindowControls'
+import { Models } from '@/screens/Models'
 import { Placeholder } from '@/screens/Placeholder'
+import { Runtimes } from '@/screens/Runtimes'
 import { Settings } from '@/screens/Settings'
 import {
   applyTheme,
@@ -68,9 +70,9 @@ function Screen({ id }: { id: Exclude<ScreenId, 'settings'> }): JSX.Element {
     case 'server':
       return <Placeholder title="server.title" blurb="server.blurb" Icon={Server} />
     case 'models':
-      return <Placeholder title="models.title" blurb="models.blurb" Icon={Boxes} />
+      return <Models />
     case 'runtimes':
-      return <Placeholder title="runtimes.title" blurb="runtimes.blurb" Icon={Cpu} />
+      return <Runtimes />
     case 'benchmark':
       return (
         <Placeholder title="benchmark.title" blurb="benchmark.blurb" Icon={BarChart3} />
