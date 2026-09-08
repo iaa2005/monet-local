@@ -19,7 +19,7 @@ export function Segmented<T extends string>({
   return (
     <div
       className={cn(
-        'inline-flex rounded-md border border-input bg-background p-0.5',
+        'inline-flex rounded-lg border border-input bg-background p-0.5',
         className,
       )}
       role="radiogroup"
@@ -32,7 +32,7 @@ export function Segmented<T extends string>({
           aria-checked={value === o.value}
           onClick={() => onChange(o.value)}
           className={cn(
-            'rounded-[calc(var(--radius-md)-2px)] px-3 py-1 text-sm transition-colors',
+            'rounded-[calc(var(--radius-lg)-2px)] px-3 py-1 text-sm font-medium transition-colors',
             value === o.value
               ? 'bg-brand-wash text-foreground'
               : 'text-muted-foreground hover:text-foreground',

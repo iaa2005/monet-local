@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, PageHeader, Section } from '@/components/ui/page'
+import { Card, Page, PageHeader, Section } from '@/components/ui/page'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useT } from '@/stores/uiStore'
@@ -38,11 +38,11 @@ export function Integrations(): JSX.Element {
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-8 py-10">
+    <Page>
       <PageHeader title="integrations.title" blurb="integrations.blurb" />
 
       {!ep.running ? (
-        <p className="mt-4 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-sm">
+        <p className="mt-4 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-sm">
           {t('integrations.notRunning')}
         </p>
       ) : null}
@@ -88,7 +88,7 @@ export function Integrations(): JSX.Element {
         <Card>
           <div className="px-4 py-3">
             <div className="flex items-center justify-between gap-4">
-              <span className="text-sm">{t('integrations.network')}</span>
+              <span className="text-sm font-medium">{t('integrations.network')}</span>
               <button
                 type="button"
                 role="switch"
@@ -125,9 +125,9 @@ export function Integrations(): JSX.Element {
             ) : null}
           </div>
           <div className="flex flex-wrap items-center justify-between gap-4 px-4 py-3">
-            <span className="text-sm">{t('integrations.apiKey')}</span>
+            <span className="text-sm font-medium">{t('integrations.apiKey')}</span>
             <input
-              className="h-8 w-56 rounded-md border border-input bg-background px-2 font-mono text-sm"
+              className="h-9 w-64 rounded-lg border border-input bg-background px-3 font-mono text-sm placeholder:font-sans placeholder:text-muted-foreground/70"
               value={settings.apiKey ?? ''}
               placeholder={t('integrations.anyKey')}
               onChange={(e) =>
@@ -137,11 +137,11 @@ export function Integrations(): JSX.Element {
           </div>
           {settings.networkAccess ? (
             <div className="flex flex-wrap items-center justify-between gap-4 px-4 py-3">
-              <span className="text-sm">Host</span>
+              <span className="text-sm font-medium">Host</span>
               {/* Shown so the address above is one another machine can use;
                   Monet Local does not guess which interface is the right one. */}
               <input
-                className="h-8 w-56 rounded-md border border-input bg-background px-2 font-mono text-sm"
+                className="h-9 w-64 rounded-lg border border-input bg-background px-3 font-mono text-sm"
                 value={host}
                 onChange={(e) => setHost(e.target.value)}
               />
@@ -149,7 +149,7 @@ export function Integrations(): JSX.Element {
           ) : null}
         </Card>
       </Section>
-    </div>
+    </Page>
   )
 }
 
@@ -168,7 +168,7 @@ function Row({
     <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
       <span className="text-sm text-muted-foreground">{label}</span>
       <div className="flex min-w-0 items-center gap-2">
-        <code className="truncate rounded bg-muted px-2 py-1 text-xs">
+        <code className="truncate rounded-md bg-muted px-2 py-1 text-xs">
           {value || placeholder}
         </code>
         <Button

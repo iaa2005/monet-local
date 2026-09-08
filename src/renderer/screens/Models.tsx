@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Eye, FolderPlus, RefreshCw, Trash2 } from 'lucide-react'
 import { bytes, tokens } from '@shared/format.js'
 import { Button } from '@/components/ui/button'
-import { Badge, Card, Empty, PageHeader, Section } from '@/components/ui/page'
+import { Badge, Card, Empty, Page, PageHeader, Section, Stat } from '@/components/ui/page'
 import { Segmented } from '@/components/ui/segmented'
 import { HuggingFace } from '@/screens/HuggingFace'
 import { api } from '@/lib/api'
@@ -50,7 +50,7 @@ export function Models(): JSX.Element {
   const models = scan?.models ?? []
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-8 py-10">
+    <Page>
       <PageHeader
         title="models.title"
         blurb="models.blurb"
@@ -98,14 +98,29 @@ export function Models(): JSX.Element {
         </div>
       ) : (
         <>
+      <div className="mt-6 grid grid-cols-3 gap-4">
+        <div className="rounded-xl border border-border bg-card px-4 py-3">
+          <Stat label={t('models.count')} value={String(models.length)} />
+        </div>
+        <div className="rounded-xl border border-border bg-card px-4 py-3">
+          <Stat label={t('models.folders')} value={String(folders.length)} />
+        </div>
+        <div className="rounded-xl border border-border bg-card px-4 py-3">
+          <Stat
+            label={t('models.size')}
+            value={bytes(models.reduce((n, m) => n + m.sizeBytes, 0), 0)}
+          />
+        </div>
+      </div>
+
       <Section title={t('models.folders')}>
         {folders.length === 0 ? (
           <Empty>{t('models.empty')}</Empty>
         ) : (
           <Card>
             {folders.map((f) => (
-              <div key={f.path} className="flex items-center gap-3 px-4 py-2.5">
-                <span className="truncate font-mono text-xs">{f.path}</span>
+              <div key={f.path} className="flex items-center gap-3 px-4 py-3">
+                <span className="truncate font-mono text-[13px]">{f.path}</span>
                 {f.readOnly ? <Badge>{t('common.readOnly')}</Badge> : null}
                 <div className="flex-1" />
                 <Button
@@ -129,7 +144,7 @@ export function Models(): JSX.Element {
       </Section>
 
       {models.length > 0 ? (
-        <Section title={`${models.length} ${t('models.count')}`}>
+        <Section title={t('models.title')}>
           <Card>
             {models.map((m) => (
               <ModelRow key={m.id} model={m} />
@@ -142,7 +157,7 @@ export function Models(): JSX.Element {
         <Section title={t('models.failures')}>
           <Card>
             {scan.failures.map((f) => (
-              <div key={f.path} className="px-4 py-2 text-xs">
+              <div key={f.path} className="px-4 py-3 text-xs">
                 <span className="font-mono">{f.path}</span>
                 <span className="ml-2 text-red-text">{f.error}</span>
               </div>
@@ -152,18 +167,18 @@ export function Models(): JSX.Element {
       ) : null}
         </>
       )}
-    </div>
+    </Page>
   )
 }
 
 function ModelRow({ model: m }: { model: ModelInfo }): JSX.Element {
   const t = useT()
   return (
-    <div className="px-4 py-3">
+    <div className="flex flex-wrap items-start gap-x-6 gap-y-2 px-4 py-3">
+      <div className="min-w-0 flex-1">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="font-medium">{m.displayName}</span>
+        <span className="text-[15px] font-semibold">{m.displayName}</span>
         <Badge tone="brand">{m.quant}</Badge>
-        <Badge>{bytes(m.sizeBytes, 1)}</Badge>
         <Badge>{m.architecture}</Badge>
         {m.moe ? (
           <Badge>
@@ -181,17 +196,19 @@ function ModelRow({ model: m }: { model: ModelInfo }): JSX.Element {
         ) : null}
         {m.mtp ? <Badge>{t('models.mtp')}</Badge> : null}
       </div>
-      <div className="mt-1 flex flex-wrap gap-x-4 text-xs text-muted-foreground">
-        <span className="font-mono">{m.id}</span>
-        <span>
-          {t('models.context')}: {tokens(m.contextMax)}
-        </span>
-        {/* The number the context slider is really spending, and the reason
-            this app exists: 64 KiB a token is 16 GiB at the advertised max. */}
+      <div className="mt-1 font-mono text-xs text-muted-foreground">{m.id}</div>
+      </div>
+      {/* The numbers are the row: size, context, and the one the context
+          slider is really spending — 64 KiB a token is 16 GiB at the
+          advertised max, which is the reason this app exists. */}
+      <div className="flex shrink-0 gap-6">
+        <Stat label={t('models.size')} value={bytes(m.sizeBytes, 1)} />
+        <Stat label={t('models.context')} value={tokens(m.contextMax)} />
         {m.kvBytesPerToken !== undefined ? (
-          <span>
-            {t('models.kvPerToken')}: {bytes(m.kvBytesPerToken, 0)}
-          </span>
+          <Stat
+            label={t('models.kvPerToken')}
+            value={bytes(m.kvBytesPerToken, 0)}
+          />
         ) : null}
       </div>
     </div>

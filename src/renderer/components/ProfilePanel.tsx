@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { FLAGS, GROUP_ORDER } from '@shared/flags/registry.js'
 import type {
   FlagDef,
@@ -9,10 +10,23 @@ import type {
 import type { StringKey } from '@shared/i18n.js'
 import { tokens } from '@shared/format.js'
 import { Segmented } from '@/components/ui/segmented'
+import { Badge } from '@/components/ui/page'
 import { cn } from '@/lib/utils'
 import { useT, useUi } from '@/stores/uiStore'
 
 const LEVELS: FlagLevel[] = ['basic', 'advanced', 'expert']
+
+/**
+ * What the app fills in for a flag the user has not set.
+ *
+ * Every field that CAN be empty says what empty means. A blank projector box
+ * next to a model that has one was the first thing the user pointed at: the
+ * app knew the answer (it is beside the file) and showed a hole instead.
+ */
+export interface Effective {
+  /** The projector the library found beside the selected model. */
+  mmprojPath?: string
+}
 
 /**
  * The form, generated from the registry.
@@ -24,10 +38,12 @@ const LEVELS: FlagLevel[] = ['basic', 'advanced', 'expert']
 export function ProfilePanel({
   values,
   hardware,
+  effective = {},
   onChange,
 }: {
   values: Profile
   hardware: Hardware
+  effective?: Effective
   onChange: (next: Profile) => void
 }): JSX.Element {
   const t = useT()
@@ -58,17 +74,18 @@ export function ProfilePanel({
         )
         if (!flags.length) return null
         return (
-          <section key={group} className="mt-6">
-            <h3 className="mb-2 text-sm font-medium text-muted-foreground">
+          <section key={group} className="mt-7">
+            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
               {t(`flags.group.${group}` as StringKey)}
             </h3>
-            <div className="divide-y divide-border rounded-lg border border-border bg-card">
+            <div className="overflow-hidden rounded-xl border border-border bg-card divide-y divide-border">
               {flags.map(([id, def]) => (
                 <Field
                   key={id}
                   id={id}
                   def={def}
                   value={values[id]}
+                  effective={effective}
                   recommended={def.recommendWhen?.(values, hardware) ?? false}
                   locale={locale}
                   onChange={(v) => set(id, v)}
@@ -83,8 +100,10 @@ export function ProfilePanel({
 }
 
 function Field({
+  id,
   def,
   value,
+  effective,
   recommended,
   locale,
   onChange,
@@ -92,6 +111,7 @@ function Field({
   id: string
   def: FlagDef
   value: Profile[string]
+  effective: Effective
   recommended: boolean
   locale: 'en' | 'ru'
   onChange: (v: Profile[string]) => void
@@ -105,24 +125,30 @@ function Field({
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="text-left text-sm"
+          className="flex min-w-0 items-center gap-2 text-left"
         >
-          {def.label[locale]}
-          {recommended ? (
-            <span className="ml-2 rounded-sm bg-brand-wash px-1.5 py-0.5 text-[11px]">
-              {t('flags.recommended')}
-            </span>
-          ) : null}
-          <span className="ml-2 font-mono text-[11px] text-muted-foreground">
-            {def.cli}
-          </span>
+          <span className="text-sm font-medium">{def.label[locale]}</span>
+          {recommended ? <Badge tone="brand">{t('flags.recommended')}</Badge> : null}
+          <span className="font-mono text-[11px] text-muted-foreground">{def.cli}</span>
+          <ChevronDown
+            className={cn(
+              'size-3.5 text-muted-foreground transition-transform',
+              open && 'rotate-180',
+            )}
+          />
         </button>
-        <Control def={def} value={value} onChange={onChange} />
+        <Control
+          id={id}
+          def={def}
+          value={value}
+          effective={effective}
+          onChange={onChange}
+        />
       </div>
       {/* The help is the product; it is one click away rather than always on,
           because forty paragraphs at once is its own kind of unhelpful. */}
       {open ? (
-        <p className="mt-2 max-w-prose text-xs text-muted-foreground">
+        <p className="mt-2 max-w-prose text-[13px] leading-relaxed text-muted-foreground">
           {def.help[locale]}
         </p>
       ) : null}
@@ -131,16 +157,21 @@ function Field({
 }
 
 function Control({
+  id,
   def,
   value,
+  effective,
   onChange,
 }: {
+  id: string
   def: FlagDef
   value: Profile[string]
+  effective: Effective
   onChange: (v: Profile[string]) => void
 }): JSX.Element {
+  const t = useT()
   const input =
-    'h-8 rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+    'h-9 rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
   if (def.type === 'bool') {
     const on = value === true
@@ -172,7 +203,9 @@ function Control({
         value={String(value ?? '')}
         onChange={(e) => onChange(e.target.value || undefined)}
       >
-        <option value="">—</option>
+        {/* "auto", spelled out: an empty option reads as a missing value,
+            and what it actually means is "llama.cpp decides". */}
+        <option value="">{t('flags.auto')}</option>
         {def.options.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
@@ -201,12 +234,34 @@ function Control({
     )
   }
 
+  // The projector is known from the library; the field shows what will be
+  // used rather than an empty box beside a model that has one.
+  if (id === 'mmproj' && !value && effective.mmprojPath) {
+    const name = effective.mmprojPath.split(/[\\/]/).pop() ?? effective.mmprojPath
+    return (
+      <span
+        className="inline-flex h-9 max-w-[280px] items-center gap-2 truncate rounded-lg border border-dashed border-input px-3 text-sm text-muted-foreground"
+        title={effective.mmprojPath}
+      >
+        <span className="truncate">{name}</span>
+        <Badge>{t('flags.fromFolder')}</Badge>
+      </span>
+    )
+  }
+
+  const placeholder =
+    def.type === 'string' && def.placeholder
+      ? `${t('flags.auto')} · ${def.placeholder}`
+      : id === 'temp' || id === 'topP'
+        ? t('flags.fromModel')
+        : t('flags.auto')
+
   return (
     <input
-      className={cn(input, 'w-28')}
+      className={cn(input, 'w-40')}
       type={def.type === 'int' ? 'number' : 'text'}
       value={value === undefined ? '' : String(value)}
-      placeholder={def.type === 'string' ? def.placeholder : ''}
+      placeholder={placeholder}
       onChange={(e) => {
         const raw = e.target.value
         if (raw === '') return onChange(undefined)

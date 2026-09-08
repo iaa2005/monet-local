@@ -42,7 +42,7 @@ export const en = {
   'integrations.blurb':
     'Connect Code Monet, Claude Code, or anything that speaks OpenAI or Anthropic.',
   'settings.title': 'Settings',
-  'settings.blurb': 'Model folders, appearance, language, ports.',
+  'settings.blurb': 'Appearance and language.',
 
   'settings.appearance': 'Appearance',
   'settings.theme': 'Theme',
@@ -143,6 +143,9 @@ export const en = {
   'flags.level.advanced': 'Advanced',
   'flags.level.expert': 'Expert',
   'flags.recommended': 'recommended here',
+  'flags.auto': 'auto (llama.cpp decides)',
+  'flags.fromModel': 'from the model’s own settings',
+  'flags.fromFolder': 'found beside the model',
   'flags.group.model': 'Model',
   'flags.group.context': 'Context',
   'flags.group.memory': 'Memory',
@@ -242,7 +245,7 @@ export const ru: Record<StringKey, string> = {
   'integrations.blurb':
     'Подключение Code Monet, Claude Code и всего, что понимает OpenAI или Anthropic.',
   'settings.title': 'Настройки',
-  'settings.blurb': 'Папки моделей, оформление, язык, порты.',
+  'settings.blurb': 'Оформление и язык.',
 
   'settings.appearance': 'Оформление',
   'settings.theme': 'Тема',
@@ -343,6 +346,9 @@ export const ru: Record<StringKey, string> = {
   'flags.level.advanced': 'Продвинутое',
   'flags.level.expert': 'Экспертное',
   'flags.recommended': 'рекомендуется здесь',
+  'flags.auto': 'авто (решает llama.cpp)',
+  'flags.fromModel': 'из настроек самой модели',
+  'flags.fromFolder': 'найден рядом с моделью',
   'flags.group.model': 'Модель',
   'flags.group.context': 'Контекст',
   'flags.group.memory': 'Память',

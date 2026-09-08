@@ -4,10 +4,9 @@ import { estimate } from '@shared/estimator.js'
 import { bytes } from '@shared/format.js'
 import type { Hardware, Profile } from '@shared/flags/types.js'
 import { Button } from '@/components/ui/button'
-import { Badge, Card, Empty, Section } from '@/components/ui/page'
+import { Badge, Card, ClickRow, Empty, Section } from '@/components/ui/page'
 import { api } from '@/lib/api'
 import { ipcMessage } from '@/lib/errors'
-import { cn } from '@/lib/utils'
 import { useT } from '@/stores/uiStore'
 import type {
   DownloadEvent,
@@ -82,7 +81,7 @@ export function HuggingFace({
         }}
       >
         <input
-          className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="h-9 flex-1 rounded-lg border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           placeholder={t('hf.search')}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -94,7 +93,7 @@ export function HuggingFace({
       </form>
 
       {error ? (
-        <p className="mt-3 rounded-md bg-red-bg px-3 py-2 text-sm text-red-text">
+        <p className="mt-3 rounded-lg bg-red-bg px-3 py-2 text-sm text-red-text">
           {error}
         </p>
       ) : null}
@@ -115,30 +114,33 @@ export function HuggingFace({
       ) : null}
 
       {repos && !contents ? (
-        <Section title={`${repos.length}`}>
+        <Section title={`${repos.length} · ${t('hf.tab')}`}>
           {repos.length === 0 ? (
             <Empty>{t('common.none')}</Empty>
           ) : (
             <Card>
               {repos.map((r) => (
-                <button
+                <ClickRow
                   key={r.id}
-                  type="button"
-                  disabled={busy !== null}
-                  onClick={() =>
-                    void guard('repo', async () => {
-                      const c = await api()?.hf.repo(r.id)
-                      if (c) setContents(c)
-                    })
+                  onClick={
+                    busy !== null
+                      ? undefined
+                      : () =>
+                          void guard('repo', async () => {
+                            const c = await api()?.hf.repo(r.id)
+                            if (c) setContents(c)
+                          })
                   }
-                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-accent"
                 >
-                  <span className="truncate text-sm">{r.id}</span>
+                  <span className="truncate text-sm font-medium">{r.id}</span>
                   <div className="flex-1" />
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {(r.downloads ?? 0).toLocaleString('en-US')} {t('hf.downloads')}
+                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                    <b className="text-sm text-foreground">
+                      {(r.downloads ?? 0).toLocaleString('en-US')}
+                    </b>{' '}
+                    {t('hf.downloads')}
                   </span>
-                </button>
+                </ClickRow>
               ))}
             </Card>
           )}
@@ -245,31 +247,25 @@ function FileRow({
   })
 
   return (
-    <div className="px-4 py-2.5">
+    <div className="px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="truncate text-sm">{file.path}</span>
+        <span className="truncate text-sm font-medium">{file.path}</span>
         {file.quant ? <Badge tone="brand">{file.quant}</Badge> : null}
         <Badge>{bytes(file.sizeBytes)}</Badge>
         <Badge
           tone={
-            verdict.level === 'fits'
-              ? 'muted'
-              : verdict.level === 'tight'
-                ? 'warn'
-                : 'warn'
+            verdict.level === 'fits' ? 'ok' : verdict.level === 'tight' ? 'warn' : 'bad'
           }
         >
-          <span
-            className={cn(
-              verdict.level === 'fits' && 'text-green-text',
-              verdict.level === 'wont_fit' && 'text-red-text',
-            )}
-          >
-            {t(`verdict.${verdict.level}`)}
-          </span>
+          {t(`verdict.${verdict.level}`)}
         </Badge>
         <div className="flex-1" />
-        <Button size="sm" variant="ghost" disabled={busy} onClick={onDownload}>
+        <Button
+          size="sm"
+          variant={verdict.level === 'wont_fit' ? 'ghost' : 'outline'}
+          disabled={busy}
+          onClick={onDownload}
+        >
           <Download className="mr-2 size-3.5" />
           {downloading ? t('hf.downloading') : t('hf.download')}
         </Button>

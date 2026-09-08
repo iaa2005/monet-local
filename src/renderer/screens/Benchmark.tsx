@@ -6,7 +6,7 @@ import {
   DDR5_5600_DUAL,
 } from '@shared/bench.js'
 import { Button } from '@/components/ui/button'
-import { Badge, Card, Empty, PageHeader, Section } from '@/components/ui/page'
+import { Badge, Card, Empty, Page, PageHeader, Section, Stat } from '@/components/ui/page'
 import { api } from '@/lib/api'
 import { ipcMessage } from '@/lib/errors'
 import { useT } from '@/stores/uiStore'
@@ -61,7 +61,7 @@ export function Benchmark(): JSX.Element {
   }
 
   const select =
-    'h-8 rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+    'h-9 w-full rounded-lg border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
   // Two runs of the same model are what a comparison is: the newest against
   // the one before it.
@@ -70,60 +70,101 @@ export function Benchmark(): JSX.Element {
   const delta = latest && previous ? compare(previous.result, latest.result) : null
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-8 py-10">
+    <Page>
       <PageHeader title="benchmark.title" blurb="benchmark.blurb" />
 
-      <div className="mt-5 flex flex-wrap items-center gap-3">
-        <select
-          className={select}
-          value={modelId}
-          onChange={(e) => setModelId(e.target.value)}
-        >
-          {models.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.displayName} · {m.quant}
-            </option>
-          ))}
-        </select>
-        <select
-          className={select}
-          value={profileId}
-          onChange={(e) => setProfileId(e.target.value)}
-        >
-          {(profiles?.profiles ?? []).map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-        <Button
-          variant="brand"
-          size="sm"
-          disabled={busy || !model || !profile}
-          onClick={() => void run()}
-        >
-          <Play className="mr-2 size-3.5" />
-          {busy ? t('bench.running') : t('bench.run')}
-        </Button>
-      </div>
+      {models.length === 0 ? (
+        <div className="mt-6">
+          <Empty>{t('server.noModels')}</Empty>
+        </div>
+      ) : (
+        <div className="mt-6 flex flex-wrap items-end gap-3">
+          <label className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+              {t('bench.model')}
+            </span>
+            <select
+              className={select}
+              value={modelId}
+              onChange={(e) => setModelId(e.target.value)}
+            >
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.displayName} · {m.quant}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex w-48 flex-col gap-1">
+            <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+              {t('bench.profile')}
+            </span>
+            <select
+              className={select}
+              value={profileId}
+              onChange={(e) => setProfileId(e.target.value)}
+            >
+              {(profiles?.profiles ?? []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Button
+            variant="brand"
+            size="sm"
+            disabled={busy || !model || !profile}
+            onClick={() => void run()}
+          >
+            <Play className="mr-2 size-3.5" />
+            {busy ? t('bench.running') : t('bench.run')}
+          </Button>
+        </div>
+      )}
 
       {error ? (
-        <p className="mt-3 rounded-md bg-red-bg px-3 py-2 text-sm text-red-text">
+        <p className="mt-3 rounded-lg bg-red-bg px-3 py-2 text-sm text-red-text">
           {error}
         </p>
       ) : null}
 
       {model ? (
-        <p className="mt-4 text-xs text-muted-foreground">
+        <div className="mt-6 grid grid-cols-3 gap-4">
           {/* The number that makes a measurement legible: on a dense model
               generation is pinned to memory bandwidth, so a result close to
               this is the hardware, not the profile. */}
-          {t('bench.ceiling')}{' '}
-          <span className="font-medium text-foreground">
-            {bandwidthCeiling(model.sizeBytes, DDR5_5600_DUAL).toFixed(1)} tok/s
-          </span>
-          . {t('bench.ceilingWhy')}
-        </p>
+          <div className="rounded-xl border border-border bg-card px-4 py-3">
+            <Stat
+              label={t('bench.ceiling')}
+              value={bandwidthCeiling(model.sizeBytes, DDR5_5600_DUAL).toFixed(1)}
+              unit="tok/s"
+              hint="DDR5-5600 ×2"
+            />
+          </div>
+          <div className="rounded-xl border border-border bg-card px-4 py-3">
+            <Stat
+              label={t('bench.generation')}
+              value={latest?.result.genTps?.toFixed(2) ?? '—'}
+              unit="tok/s"
+              hint={latest ? undefined : t('bench.empty')}
+            />
+          </div>
+          <div className="rounded-xl border border-border bg-card px-4 py-3">
+            <Stat
+              label={t('bench.prompt')}
+              value={latest?.result.promptTps?.toFixed(1) ?? '—'}
+              unit="tok/s"
+              hint={
+                delta?.genRatio
+                  ? delta.fasterGen === null
+                    ? t('bench.noise')
+                    : `${delta.genRatio.toFixed(2)}× ${t('bench.faster')}`
+                  : undefined
+              }
+            />
+          </div>
+        </div>
       ) : null}
 
       <Section title={t('bench.history')}>
@@ -138,11 +179,17 @@ export function Benchmark(): JSX.Element {
                   <Badge>{r.modelId}</Badge>
                   <Badge>{r.result.backend}</Badge>
                   <div className="flex-1" />
-                  <span className="text-sm">
-                    {t('bench.prompt')}{' '}
-                    <b>{r.result.promptTps?.toFixed(1) ?? '—'}</b> ·{' '}
-                    {t('bench.generation')}{' '}
-                    <b>{r.result.genTps?.toFixed(2) ?? '—'}</b> tok/s
+                  <span className="text-sm tabular-nums">
+                    <span className="text-muted-foreground">{t('bench.prompt')}</span>{' '}
+                    <b className="font-display text-base">
+                      {r.result.promptTps?.toFixed(1) ?? '—'}
+                    </b>
+                    <span className="mx-2 text-muted-foreground">·</span>
+                    <span className="text-muted-foreground">{t('bench.generation')}</span>{' '}
+                    <b className="font-display text-base">
+                      {r.result.genTps?.toFixed(2) ?? '—'}
+                    </b>{' '}
+                    <span className="text-xs text-muted-foreground">tok/s</span>
                   </span>
                 </div>
                 {r.id === latest?.id && delta?.genRatio ? (
@@ -165,6 +212,6 @@ export function Benchmark(): JSX.Element {
           </Card>
         )}
       </Section>
-    </div>
+    </Page>
   )
 }

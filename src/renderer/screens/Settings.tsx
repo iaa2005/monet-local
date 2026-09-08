@@ -1,14 +1,15 @@
 import { LOCALES, type Locale } from '@shared/i18n.js'
 import type { ThemeChoice } from '@shared/prefs.js'
+import { Card, Page, PageHeader, Section } from '@/components/ui/page'
 import { Segmented } from '@/components/ui/segmented'
 import { useT, useUi } from '@/stores/uiStore'
 
 const LOCALE_NAMES: Record<Locale, string> = { en: 'English', ru: 'Русский' }
 
 /**
- * The only screen with working controls in M0 — theme and language are what
- * the scaffold is for: they prove the token set, the i18n wiring and the
- * round trip to disk all hold before any of the real machinery lands.
+ * Appearance and language. Everything with a machine behind it — folders,
+ * runtimes, the port and the key — lives on the screen that uses it, so
+ * this one stays short.
  */
 export function Settings(): JSX.Element {
   const t = useT()
@@ -23,17 +24,11 @@ export function Settings(): JSX.Element {
   ]
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-8 py-10">
-      <h1 className="font-display text-2xl font-semibold">
-        {t('settings.title')}
-      </h1>
-      <p className="mt-1 text-muted-foreground">{t('settings.blurb')}</p>
+    <Page>
+      <PageHeader title="settings.title" blurb="settings.blurb" />
 
-      <section className="mt-8">
-        <h2 className="text-sm font-medium text-muted-foreground">
-          {t('settings.appearance')}
-        </h2>
-        <div className="mt-3 divide-y divide-border rounded-lg border border-border bg-card">
+      <Section title={t('settings.appearance')}>
+        <Card>
           <Row label={t('settings.theme')}>
             <Segmented value={prefs.theme} options={themes} onChange={setTheme} />
           </Row>
@@ -44,9 +39,9 @@ export function Settings(): JSX.Element {
               onChange={setLocale}
             />
           </Row>
-        </div>
-      </section>
-    </div>
+        </Card>
+      </Section>
+    </Page>
   )
 }
 
@@ -62,7 +57,7 @@ function Row({
     // (Светлая / Тёмная / Системная is half again the width of the English)
     // pushed a horizontal scrollbar onto the whole screen at narrow widths.
     <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
-      <span className="text-sm">{label}</span>
+      <span className="text-sm font-medium">{label}</span>
       {children}
     </div>
   )

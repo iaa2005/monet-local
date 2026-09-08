@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Check, Cpu, FolderOpen, RefreshCw, Trash2 } from 'lucide-react'
 import { bytes } from '@shared/format.js'
 import { Button } from '@/components/ui/button'
-import { Badge, Card, Empty, PageHeader, Section } from '@/components/ui/page'
+import { Badge, Card, ClickRow, Empty, Page, PageHeader, Section } from '@/components/ui/page'
 import { api } from '@/lib/api'
 import { ipcMessage } from '@/lib/errors'
 import { useT, useUi } from '@/stores/uiStore'
@@ -48,7 +48,7 @@ export function Runtimes(): JSX.Element {
   const installed = state?.installed ?? []
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-8 py-10">
+    <Page>
       <PageHeader
         title="runtimes.title"
         blurb="runtimes.blurb"
@@ -71,7 +71,7 @@ export function Runtimes(): JSX.Element {
       />
 
       {error ? (
-        <p className="mt-4 rounded-md bg-red-bg px-3 py-2 text-sm text-red-text">
+        <p className="mt-4 rounded-lg bg-red-bg px-3 py-2 text-sm text-red-text">
           {error}
         </p>
       ) : null}
@@ -141,7 +141,7 @@ export function Runtimes(): JSX.Element {
                   key={row.backendId}
                   className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3"
                 >
-                  <span className="font-medium">{row.label}</span>
+                  <span className="text-sm font-medium">{row.label}</span>
                   <Badge>{row.build}</Badge>
                   <Badge>{bytes(row.totalBytes, 0)}</Badge>
                   {row.untested ? (
@@ -191,7 +191,7 @@ export function Runtimes(): JSX.Element {
           </Card>
         )}
       </Section>
-    </div>
+    </Page>
   )
 }
 
@@ -210,25 +210,31 @@ function PackRow({
 }): JSX.Element {
   const t = useT()
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
+    // The whole row chooses the runtime; the trash can is the one thing on
+    // it that does something else, so it stops the click.
+    <ClickRow selected={active} onClick={active || busy ? undefined : onUse}>
       <Cpu className={active ? 'size-4 text-brand' : 'size-4 text-muted-foreground'} />
-      <span className="font-medium">{pack.label}</span>
+      <span className="text-sm font-medium">{pack.label}</span>
       <Badge>{pack.build}</Badge>
       {pack.custom ? <Badge>custom</Badge> : null}
       <div className="flex-1" />
       {active ? (
-        <Badge tone="brand">{t('common.inUse')}</Badge>
+        <Badge tone="brand">
+          <Check className="size-3" />
+          {t('common.inUse')}
+        </Badge>
       ) : (
-        <Button size="sm" variant="ghost" disabled={busy} onClick={onUse}>
-          {t('common.use')}
-        </Button>
+        <span className="text-sm text-muted-foreground">{t('common.use')}</span>
       )}
       <Button
         size="icon-sm"
         variant="ghost"
         disabled={busy}
         title={t('common.remove')}
-        onClick={onRemove}
+        onClick={(e) => {
+          e.stopPropagation()
+          onRemove()
+        }}
       >
         <Trash2 className="size-3.5" />
       </Button>
@@ -249,6 +255,6 @@ function PackRow({
           </ul>
         )}
       </div>
-    </div>
+    </ClickRow>
   )
 }
