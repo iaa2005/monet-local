@@ -58,7 +58,7 @@ export default function App(): JSX.Element {
 
       <div className="flex min-h-0 flex-1">
         <Sidebar />
-        <main className="min-w-0 flex-1 overflow-y-auto scrollbar-thin bg-background">
+<main className="min-w-0 flex-1 overflow-y-auto scrollbar-thin bg-background">
           {screen === 'settings' ? <Settings /> : <Screen id={screen} />}
         </main>
       </div>

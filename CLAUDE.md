@@ -274,3 +274,12 @@ fitted to it, even just for a margin, and it unsticks the moment the scroll
 passes that div's height (measured: 802px above the viewport). And the scroll
 container is `<main>`, not the window, so the IntersectionObserver that asks
 "is the card still visible" is rooted there.
+
+The pinned bar's glass is a plate that BLURS and does not tint. A gradient of
+the page colour painted over the rows erased them; what is wanted is the rows
+still being there and out of focus. It spans the scroller's full width, and
+that width is MEASURED: `100vw` overshoots and then needs clipping, but
+`overflow-x: clip` beside an `overflow-y: auto` computes to `hidden`, which
+silently makes the page horizontally scrollable by two thousand pixels of
+nothing. Centring with a transform does not land exactly either — the offset
+to the scroller's edge is a number, so it is used as one.

@@ -372,3 +372,55 @@
   border-radius: 9999px;
   background: hsl(var(--brand));
 }
+
+/**
+ * The glass behind the pinned verdict.
+ *
+ * A plate, not a tint. Painting a gradient of the page colour over the rows
+ * underneath erased them; what is wanted is the rows still being there and
+ * out of focus, so this only blurs.
+ *
+ * It reaches past the column on both sides — `<main>` clips the overflow, so
+ * the strip runs edge to edge instead of ending in a rectangle the width of
+ * the bar.
+ *
+ * Below the bar the blur has to stop, and a hard line where it stops is the
+ * giveaway. Two layers with different radii fade out over the last 40px —
+ * a cheap approximation of a progressive blur, which no browser offers as a
+ * single filter. The fade is pinned to the BOTTOM in pixels, so a bar that
+ * wraps to two lines does not stretch it.
+ *
+ * `mask-image` fades a backdrop-filter along with the element it is on, so
+ * one gradient does the whole job. Chromium is what Electron runs; the
+ * -webkit- copies are for anything else that opens this file.
+ */
+.glass-plate::before,
+.glass-plate::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.glass-plate::before {
+  backdrop-filter: blur(24px) saturate(1.6);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent 100%);
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 calc(100% - 40px),
+    transparent 100%
+  );
+}
+
+/* A trace of it, reaching a little further down. */
+.glass-plate::after {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 52px), transparent 100%);
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 calc(100% - 52px),
+    transparent 100%
+  );
+}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react'
 import type { Estimate } from '@shared/estimator.js'
 import { bytes, tokens } from '@shared/format.js'
@@ -26,15 +26,20 @@ interface Budget {
 }
 
 /**
- * Is the card out of sight?
+ * Is the card out of sight, and what is it scrolling inside of?
  *
- * Watched inside the element that actually scrolls: the page scrolls in
- * `<main>`, so an observer rooted at the viewport would answer for the wrong
- * box.
+ * The page scrolls in `<main>`, not the window: an observer rooted at the
+ * viewport would answer for the wrong box, and the window's width is not the
+ * width of the column's surroundings either.
  */
-function useOutOfView(): [React.RefObject<HTMLDivElement | null>, boolean] {
+function useOutOfView(): [
+  React.RefObject<HTMLDivElement | null>,
+  boolean,
+  HTMLElement | null,
+] {
   const card = useRef<HTMLDivElement>(null)
   const [away, setAway] = useState(false)
+  const [scroller, setScroller] = useState<HTMLElement | null>(null)
 
   useEffect(() => {
     const el = card.current
@@ -45,6 +50,7 @@ function useOutOfView(): [React.RefObject<HTMLDivElement | null>, boolean] {
       if (overflow === 'auto' || overflow === 'scroll') break
       root = root.parentElement
     }
+    setScroller(root)
     const io = new IntersectionObserver(
       ([entry]) => setAway(!(entry?.isIntersecting ?? true)),
       { root },
@@ -53,7 +59,42 @@ function useOutOfView(): [React.RefObject<HTMLDivElement | null>, boolean] {
     return () => io.disconnect()
   }, [])
 
-  return [card, away]
+  return [card, away, scroller]
+}
+
+/**
+ * Stretch a box from inside the column to the full width of the scroller.
+ *
+ * Measured, not reached for with `100vw`: a plate that overshoots has to be
+ * clipped, and `overflow-x: clip` beside an `overflow-y: auto` computes to
+ * `hidden` — which quietly makes the page horizontally scrollable by two
+ * thousand pixels of nothing. Centring it with a transform does not land
+ * exactly either; the offset to the scroller's edge is a number, so it is
+ * used as one.
+ */
+function useFullWidth(
+  anchor: React.RefObject<HTMLElement | null>,
+  scroller: HTMLElement | null,
+  on: boolean,
+): { left: number; width: number } {
+  const [box, setBox] = useState({ left: 0, width: 0 })
+
+  useLayoutEffect(() => {
+    const el = anchor.current
+    if (!on || !el || !scroller) return
+    const measure = (): void => {
+      const a = el.getBoundingClientRect()
+      const s = scroller.getBoundingClientRect()
+      setBox({ left: Math.round(s.left - a.left), width: scroller.clientWidth })
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(scroller)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [anchor, scroller, on])
+
+  return box
 }
 
 /**
@@ -78,7 +119,9 @@ export function Verdict({
   onApply?: (fix: Estimate['suggestions'][number]) => void
 }): JSX.Element {
   const t = useT()
-  const [card, away] = useOutOfView()
+  const [card, away, scroller] = useOutOfView()
+  const rail = useRef<HTMLDivElement>(null)
+  const plate = useFullWidth(rail, scroller, away)
   const tone = e.level === 'fits' ? 'ok' : e.level === 'tight' ? 'warn' : 'bad'
   const Icon =
     e.level === 'fits' ? CheckCircle2 : e.level === 'tight' ? AlertTriangle : XCircle
@@ -131,28 +174,46 @@ export function Verdict({
           below is laid out as if neither existed. */}
       <div className="sticky top-0 z-30 h-0">
         {away ? (
-          <div
-            className={cn(
-              'absolute inset-x-0 top-0 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border bg-card px-4 py-2.5 shadow-lg',
-              tone === 'ok' && 'border-green-border',
-              tone === 'warn' && 'border-warn/40',
-              tone === 'bad' && 'border-red-border',
-            )}
-          >
-            <Icon
-              className={cn(
-                'size-4 shrink-0',
-                tone === 'ok' && 'text-green-text',
-                tone === 'warn' && 'text-warn',
-                tone === 'bad' && 'text-red-text',
-              )}
+          // Stacked in normal flow inside an absolutely positioned box, so
+          // the fade always starts exactly where the bar ends however tall
+          // the bar turns out to be — it wraps to two lines at narrow
+          // widths, and a fade pinned to the rail instead would have hidden
+          // its own strongest part behind it.
+          <div ref={rail} className="absolute inset-x-0 top-0">
+            {/* One plate behind the whole thing, reaching past the column on
+                both sides. It covers the bar and the 40px under it, and
+                fades out over that last stretch. */}
+            <div
+              className="glass-plate pointer-events-none absolute inset-y-0"
+              style={{ left: plate.left, width: plate.width || '100%' }}
+              aria-hidden
             />
-            <span className="font-display text-sm font-semibold">
-              {t(`verdict.${e.level}` as StringKey)}
-            </span>
-            {budgets.map((b) => (
-              <Inline key={b.label} budget={b} />
-            ))}
+            <div
+              className={cn(
+                'relative z-10 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border bg-card/70 px-4 py-2.5',
+                tone === 'ok' && 'border-green-border',
+                tone === 'warn' && 'border-warn/40',
+                tone === 'bad' && 'border-red-border',
+              )}
+            >
+              <Icon
+                className={cn(
+                  'size-4 shrink-0',
+                  tone === 'ok' && 'text-green-text',
+                  tone === 'warn' && 'text-warn',
+                  tone === 'bad' && 'text-red-text',
+                )}
+              />
+              <span className="font-display text-sm font-semibold">
+                {t(`verdict.${e.level}` as StringKey)}
+              </span>
+              {budgets.map((b) => (
+                <Inline key={b.label} budget={b} />
+              ))}
+            </div>
+            {/* The stretch the plate fades out over. Empty: the plate is
+                what paints, this only gives it the height to do it in. */}
+            <div className="h-10" aria-hidden />
           </div>
         ) : null}
       </div>
