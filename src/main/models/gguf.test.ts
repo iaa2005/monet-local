@@ -88,32 +88,37 @@ describe.skipIf(!haveReal)('a download in progress', () => {
 })
 
 describe('displayNameFor', () => {
-  it('uses the name the model was published under', () => {
+  it('uses the name the model was published under, spaced out', () => {
     // These are the real filenames, and the real `general.name` beside them.
     // The converter builds the metadata out of the Hugging Face repo id, so
-    // `openai/gpt-oss-20b` arrives title-cased with the owner glued on and
-    // the hyphens gone. The filename came through intact.
+    // `openai/gpt-oss-20b` arrives title-cased with the owner glued on. The
+    // filename came through intact.
     expect(displayNameFor('gpt-oss-20b-MXFP4.gguf', 'Openai_Gpt Oss 20b')).toBe(
-      'gpt-oss-20b',
+      'gpt oss 20b',
     )
-    expect(
-      displayNameFor('Qwen3.8-27B-Q4_K_M.gguf', 'Qwen_Qwen3.8 27B'),
-    ).toBe('Qwen3.8-27B')
+    expect(displayNameFor('Qwen3.8-27B-Q4_K_M.gguf', 'Qwen_Qwen3.8 27B')).toBe(
+      'Qwen3.8 27B',
+    )
     expect(displayNameFor('gemma-4-E4B-it-Q8_0.gguf', 'Gemma 4 E4B')).toBe(
-      'gemma-4-E4B-it',
+      'gemma 4 E4B it',
     )
   })
 
   it('invents no capitals of its own', () => {
     // A rule that title-cased the first letter would be wrong exactly where
     // it showed: OpenAI writes it "gpt-oss".
-    expect(displayNameFor('gpt-oss-20b-MXFP4.gguf')).toBe('gpt-oss-20b')
+    expect(displayNameFor('gpt-oss-20b-MXFP4.gguf')).toBe('gpt oss 20b')
   })
 
-  it('takes off the packaging, whatever it is', () => {
-    expect(displayNameFor('Qwen3.8-27B-UD-IQ4_XS.gguf')).toBe('Qwen3.8-27B')
-    expect(displayNameFor('model-name-BF16.gguf')).toBe('model-name')
-    expect(displayNameFor('Foo-7B-Q4_K_M-00001-of-00003.gguf')).toBe('Foo-7B')
+  it('takes the quantisation off before touching the separators', () => {
+    // The order is the whole trick: `Q4_K_M` and `IQ4_XS` are held together
+    // by the characters being replaced, so doing it the other way round
+    // leaves "Qwen3.8 27B Q4 K M".
+    expect(displayNameFor('Qwen3.8-27B-Q4_K_M.gguf')).toBe('Qwen3.8 27B')
+    expect(displayNameFor('Qwen3.8-27B-UD-IQ4_XS.gguf')).toBe('Qwen3.8 27B')
+    expect(displayNameFor('Foo-7B-Q8_0.gguf')).toBe('Foo 7B')
+    expect(displayNameFor('model-name-BF16.gguf')).toBe('model name')
+    expect(displayNameFor('Foo-7B-Q4_K_M-00001-of-00003.gguf')).toBe('Foo 7B')
   })
 
   it('falls back to metadata when the filename says nothing', () => {
@@ -121,17 +126,17 @@ describe('displayNameFor', () => {
       'Qwen3.8 27B',
     )
     // And still says something when there is no metadata either.
-    expect(displayNameFor('ggml-model-q4_0.gguf')).toBe('ggml-model')
+    expect(displayNameFor('ggml-model-q4_0.gguf')).toBe('ggml model')
   })
 
   it('drops a repeated owner but never a real word', () => {
-    // `Qwen_Qwen3.8` is the owner said twice. `phi_4_mini` is not: dropping
-    // the prefix there would leave "4_mini", which is not a name.
     // Through the metadata path — a filename that identifies nothing, so
     // the mangled name is all there is to clean up.
     expect(displayNameFor('ggml-model.gguf', 'Qwen_Qwen3.8 27B')).toBe(
       'Qwen3.8 27B',
     )
-    expect(displayNameFor('phi_4_mini.gguf')).toBe('phi_4_mini')
+    // `phi_4_mini` is not an owner said twice: the underscore is a
+    // separator like any other and the words survive it.
+    expect(displayNameFor('phi_4_mini.gguf')).toBe('phi 4 mini')
   })
 })

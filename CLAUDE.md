@@ -211,12 +211,16 @@ model do not fit the same way and do not share settings unless asked to.
 
 The common GGUF converters build it out of the Hugging Face repo id, and it
 arrives mangled: `openai/gpt-oss-20b` becomes `Openai_Gpt Oss 20b`,
-`Qwen/Qwen3.8-27B` becomes `Qwen_Qwen3.8 27B` — owner duplicated, hyphens
-gone, every word title-cased. The FILE name survives that trip, so
-`displayNameFor` takes the filename with the packaging stripped
-(quantisation, `-NNNNN-of-NNNNN`, a trailing `-GGUF`) and falls back to
+`Qwen/Qwen3.8-27B` becomes `Qwen_Qwen3.8 27B` — owner duplicated, every word
+title-cased. The FILE name survives that trip, so `displayNameFor` takes the
+filename with the packaging stripped (quantisation, `-NNNNN-of-NNNNN`, a
+trailing `-GGUF`), turns the separators into spaces, and falls back to
 metadata only for a file named something that identifies nothing
 (`ggml-model-q4_0.gguf`).
 
+**Order matters.** The quantisation comes off BEFORE the separators are
+replaced: `Q4_K_M` and `IQ4_XS` are held together by the very characters
+being replaced, and the other order yields "Qwen3.8 27B Q4 K M".
+
 Invent no capitals on top of either. A rule that title-cased the first letter
-would be wrong exactly where it showed: OpenAI writes it "gpt-oss".
+would be wrong exactly where it showed: OpenAI writes it "gpt oss".

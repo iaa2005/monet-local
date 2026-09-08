@@ -92,27 +92,37 @@ function withoutRepeatedOwner(name: string): string {
 }
 
 /**
+ * Separators out, words in. Runs LAST, after the quantisation has already
+ * been taken off the end — `Q4_K_M` and `IQ4_XS` are held together by the
+ * very characters being replaced, and a name reading "Qwen3.8 27B Q4 K M"
+ * would be the price of doing this in the other order.
+ */
+function spaced(name: string): string {
+  return name.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+/**
  * What to call a model.
  *
  * `general.name` is written by whatever converted the model, and the common
  * converters build it out of the Hugging Face repo id: `openai/gpt-oss-20b`
  * arrives as "Openai_Gpt Oss 20b", `Qwen/Qwen3.8-27B` as "Qwen_Qwen3.8 27B".
- * The owner is duplicated, the hyphens are gone and every word has been
- * title-cased, so a model nobody writes that way is displayed that way.
+ * The owner is duplicated and every word has been title-cased, so a model
+ * nobody writes that way is displayed that way.
  *
  * The FILE name came through that trip intact — it is what the publisher
  * called the thing — so it wins. Metadata is the fallback for a file named
  * something that identifies nothing.
  *
- * No case is invented on top of either: "gpt-oss-20b" is how OpenAI writes
- * it, and a rule that capitalised the first letter would be wrong exactly
- * where it showed.
+ * No case is invented on top of either. Capitalising the first letter would
+ * be wrong exactly where it showed: OpenAI writes it "gpt oss", not "Gpt
+ * oss".
  */
 export function displayNameFor(fileName: string, metaName?: string): string {
   const fromFile = withoutRepeatedOwner(stem(fileName))
-  if (fromFile && !GENERIC.test(fromFile)) return fromFile
+  if (fromFile && !GENERIC.test(fromFile)) return spaced(fromFile)
   const fromMeta = metaName ? withoutRepeatedOwner(metaName.trim()) : ''
-  return fromMeta || fromFile || fileName
+  return spaced(fromMeta || fromFile || fileName)
 }
 
 export function describeModel(
