@@ -3,12 +3,12 @@
 **Только сервер.** Monet Local управляет `llama-server` из llama.cpp: рантаймы
 под любой бэкенд, библиотека моделей, все флаги с объяснением и расчётом
 памяти, бенчмарк, и наружу — два API: OpenAI-совместимый и
-Anthropic-совместимый. Чата нет. Web UI llama.cpp, tools и MCP выключены и
-не пробрасываются — сервер не тратит на них ничего.
+Anthropic-совместимый. Чата нет. Web UI llama.cpp, tools и MCP выключены и не
+пробрасываются — сервер не тратит на них ничего.
 
-Все настройки крутятся здесь. Клиент (в первую очередь Code Monet) выбирает
-«Monet Local», получает список моделей со всеми данными и ничего не
-настраивает.
+Загрузкой и выгрузкой моделей управляет **только Monet Local**. Клиент (в
+первую очередь Code Monet) выбирает «Monet Local», получает список
+**загруженных** моделей со всеми данными и ничего не настраивает.
 
 Дизайн и стек — из Code Monet (`github.com/iaa2005/monet`, клон в
 `D:\Projects\monet`). Рабочая папка — `D:\Projects\monet-local`.
@@ -42,30 +42,70 @@ llama-server уже умеет всё: OpenAI API, **Anthropic Messages API**
 
 Web UI отключается флагом `--no-webui`. Tools, MCP, `--agent` — не включаются
 никогда и в реестр флагов не входят (только через `expert`-строку, на свой
-риск). Сервер слушает `127.0.0.1`; режим «доступ по сети» — отдельный
-тумблер, при котором API-ключ становится обязательным.
+риск).
 
-### D2. Один порт наружу: management API + прокси
+### D2. Router-режим llama-server — одна «мама», дети по модели
 
-Клиент видит **одну** точку: `http://127.0.0.1:17171` (порт — предложение,
-обсуждаемо; главное — не 8080/1234/11434, чтобы не толкаться с llama.cpp,
-LM Studio и Ollama). Внутри:
+Проверено вживую на b10826 (`D:\Colibri\logs\router.log`): `llama-server`
+без `-m`, с `--models-preset <ini>` и `--no-models-autoload`, поднимает
+**роутер**, который по команде спавнит дочерний `llama-server --port 0` на
+модель, наследуя свои флаги и добавляя флаги из секции INI. Несколько моделей
+могут быть загружены одновременно (`--models-max N`).
 
-- Node-сервер в main-процессе на `17171`: `/monet-local/v1/*` — свой API;
-  `/v1/*` — reverse-proxy на llama-server (стриминг SSE прозрачно).
-- llama-server на `17172`, только localhost, снаружи не виден.
+Что это даёт Monet Local:
 
-Зачем прокси, а не прямой llama-server:
-- один адрес и один ключ для клиента; llama-server можно перезапускать под
-  другой моделью, адрес не меняется;
-- **JIT-загрузка**: запрос называет модель, которой нет в памяти → прокси
-  запускает загрузку и держит запрос до `ready` (как LM Studio), а `/v1/models`
-  отдаёт **всю библиотеку**, не только загруженную;
-- очередь: пока модель грузится, второй клиент получает честный 503 с
-  `Retry-After`, а не таймаут;
-- ключ и LAN-режим проверяются в одном месте.
+- **загрузка/выгрузка — HTTP-команды**, не перезапуск процесса:
+  `POST /models/load {"model": id}` → `{"success": true}` (асинхронно, статус
+  `loading` → `loaded`), `POST /models/unload {"model": id}` (недогруженную
+  принудительно убивает, «exited with status 99»);
+- `GET /models` — все известные модели со `status.value`
+  (`unloaded | loading | loaded`), `status.args` (точная команда ребёнка),
+  `status.preset` (его INI), `architecture.input_modalities` (vision по
+  mmproj — сервер определяет сам);
+- запрос к незагруженной модели при выключенном autoload — чистый
+  `400 {"error": {"message": "model 'X' not found"}}`, никакой магии;
+- **INI-пресет = профиль Monet Local.** Ключи = имена CLI-флагов без дефисов
+  (`n-gpu-layers = 8`, `c = 8192`, булевы — `repack = 0`, `webui = 0`),
+  секция `[*]` — общие, `[<model-id>]` — на модель; служебные:
+  `load-on-startup`, `stop-timeout`. Monet Local **генерирует INI из
+  профилей**, `--models-dir` не используется: его эвристика считает папку
+  одной моделью и на `Qwen3.8-27B-GGUF\` выбрала Q6_K (22 ГБ) — ровно ту,
+  что не влезает.
 
-### D3. Рантаймы — таблица ассетов + «свой пак»
+Роутер живёт всё время работы Monet Local; смена набора моделей/профилей —
+перезапись INI и перезапуск роутера (детей нет — это секунда). Сироты
+контролируются на двух уровнях: роутер и дети.
+
+Запасной режим `single`: если router-режим сломается в новой сборке, тот же
+`ServerController` умеет обычный `llama-server -m … --port 17172` на одну
+модель. Переключатель в Settings → Advanced.
+
+### D3. Один порт наружу: management API + прокси
+
+Клиент видит **одну** точку: `http://127.0.0.1:17171`. Внутри:
+
+- Node-сервер в main на `17171`: `/monet-local/v1/*` — свой API;
+  `/v1/*` — reverse-proxy на роутер (`17172`, только localhost), SSE
+  прозрачно.
+- Прокси **фильтрует `/v1/models` до `status = loaded`** — стандартный клиент
+  видит только то, чем можно пользоваться. Полный список со статусами —
+  в `/monet-local/v1/models`.
+- Никакой JIT-загрузки: запрос к незагруженной модели пробрасывает `400` от
+  роутера как есть, плюс заголовок `X-Monet-Local-Hint: load it in Monet Local`.
+- Ключ и режим доступа по сети проверяются здесь.
+
+Зачем прокси, а не голый роутер: один адрес и ключ на всё, `/v1/models`
+только с рабочими моделями, сетевой гейт в одном месте, и наш API рядом —
+клиенту не нужно знать про два порта.
+
+**Доступ по сети** («LAN»): по умолчанию `17171` слушает только
+`127.0.0.1` — этот компьютер. Тумблер «Доступ по сети» переводит на
+`0.0.0.0` — тогда Monet Local на этом ПК виден другим машинам в домашней/
+офисной сети по `http://<ip-этого-пк>:17171`. Это и есть сценарий «несколько
+Monet Local с разных компов» в Code Monet. При включении API-ключ становится
+обязательным, иначе любой в той же сети гоняет вашу модель.
+
+### D4. Рантаймы — таблица ассетов + «свой пак»
 
 llama.cpp собирает под всё (BLAS, BLIS, CANN, CUDA, HIP, Hexagon, zDNN, MUSA,
 Metal, OpenCL, OpenVINO, RPC, SYCL, VirtGPU, Vulkan, WebGPU, ZenDNN). Менеджер
@@ -95,16 +135,17 @@ zip, флаг `--rpc host:port` в группе `advanced`.
 В exe едут **Vulkan + CPU** (50 МБ, первый запуск офлайн); остальное — по
 кнопке. Несколько версий одного бэкенда живут рядом (откат).
 
-### D4. Реестр флагов — единственный источник правды
+### D5. Реестр флагов — единственный источник правды
 
-Один TypeScript-реестр (zod) → форма, превью команды, пресеты, валидация,
-калькулятор. Уровни `basic` / `advanced` / `expert`. Группы: model, context,
-memory, gpu, sampling, reasoning, speculative, server, advanced.
-Справочник — `docs/reference/llama-server-help.txt` (735 строк, b10826).
+Один TypeScript-реестр (zod) → форма, превью INI-секции и команды ребёнка,
+пресеты, валидация, калькулятор. Уровни `basic` / `advanced` / `expert`.
+Группы: model, context, memory, gpu, sampling, reasoning, speculative, server,
+advanced. Справочник — `docs/reference/llama-server-help.txt` (b10826).
 
 ```ts
 noKvOffload: {
-  flag: '--no-kv-offload', group: 'memory', type: 'bool', default: false,
+  flag: '--no-kv-offload', ini: 'kv-offload = 0',
+  group: 'memory', type: 'bool', default: false,
   label: { en: 'Keep KV cache in system RAM', ru: 'KV-кэш в системной RAM' },
   help:  { en: 'On an iGPU this is what lets context grow past ~8k: the wall is the device buffer limit, not the cache size.',
            ru: 'На iGPU именно это позволяет контексту вырасти за ~8k: стенка — лимит буферов устройства, а не размер кэша.' },
@@ -112,16 +153,12 @@ noKvOffload: {
 },
 ```
 
-### D5. Модели лежат там, где лежат
+### D6. Модели лежат там, где лежат; загрузки — отдельно
 
 Библиотека = список папок + индекс метаданных в userData. Никаких
-копирований.
-
-### D6. Один сервер за раз в v1; несколько Monet Local — в Code Monet
-
-Один инстанс llama-server на машину (D2 делает переключение моделей
-прозрачным). Несколько машин — это несколько провайдеров «Monet Local» на
-стороне Code Monet, каждый со своим адресом.
+копирований. **Загрузки идут в `%APPDATA%/monet-local/downloads/*.part`** и
+переезжают в папку моделей только целиком: роутер подхватил недокачанный
+`IQ4_XS.gguf` из `D:\Colibri\models` как модель и попытался грузить.
 
 ### D7. Windows-first, кроссплатформенно по коду
 
@@ -137,19 +174,16 @@ electron-updater (GitHub Releases `iaa2005/monet-local`).
 
 Отличия от Code Monet:
 - **Иконки — только lucide-react.** Без hugeicons/@iconify.
-- **Без фона-картин.** `useMonetBackground` не переносится.
+- **Без фона-картин.**
 - **Бренд — оранжевый:** `oklch(67.1967% 0.201986 42.2057)` = `#f65e00` =
-  `hsl(23 100% 48%)`. В `globals.css` Code Monet бренд задаётся одним числом
-  `--brand-hue: 211`; здесь `--brand` объявляется напрямую в oklch, а
-  `--link`, `--brand-wash`, `--brand-edge` выводятся от него (Tailwind 4 и
-  Chromium в Electron 33 понимают oklch и `color-mix()`). Проверить контраст
-  ссылки на канве (AA ≥ 4.5:1) — у оранжевого с L 67% это не гарантировано,
-  `--link` скорее всего придётся затемнить.
-- **Иконка приложения:** `build/icon-source.png` (585×585, из Downloads).
-  В M0 — ресайз до 512 и 1024, `build/icon.png` + `build/icon.ico`
-  (electron-builder генерирует ico из png ≥ 256).
-- **Язык:** en и ru, i18n в каркасе с M0; переключатель в Settings;
-  подписи и подсказки флагов — в реестре на обоих языках.
+  `hsl(23 100% 48%)`. `--brand` объявляется напрямую в oklch, производные
+  (`--link`, `--brand-wash`, `--brand-edge`) — через `color-mix()`. Проверить
+  контраст ссылки на светлой канве (AA ≥ 4.5:1); `--link` скорее всего
+  придётся затемнить.
+- **Иконка приложения:** `build/icon-source.png` (585×585). В M0 — ресайз до
+  512/1024, `build/icon.png` + `build/icon.ico`.
+- **Язык:** en и ru, i18n с M0; подписи и подсказки флагов — в реестре на
+  обоих языках.
 
 ---
 
@@ -157,56 +191,57 @@ electron-updater (GitHub Releases `iaa2005/monet-local`).
 
 ```
 клиенты (Code Monet, Claude Code через ANTHROPIC_BASE_URL, curl, …)
-        │  http://127.0.0.1:17171   (LAN: http://<host>:17171 + API key)
+        │  http://127.0.0.1:17171   (сеть: http://<host>:17171 + ключ)
 ┌───────▼─────────────────────── main (Node) ───────────────────────────┐
-│ ManagementServer  /monet-local/v1/*   info · models · status · load · │
-│                   unload · profiles · events (SSE)                    │
-│ Proxy             /v1/*  → llama-server:17172  (OpenAI + Anthropic)   │
-│                   JIT-load по имени модели, очередь, ключ, LAN-гейт   │
-│ RuntimeManager    таблица ассетов, скачать/проверить, свой пак,        │
-│                   --list-devices                                       │
-│ ModelLibrary      папки, GGUF-метаданные, пары mmproj, индекс          │
-│ Downloader        HF: resume, range-параллель, sha256, очередь         │
-│ ServerController  spawn llama-server --no-webui, state machine, логи,  │
-│                   сироты                                               │
-│ Estimator         память из GGUF + профиль + железо → verdict + why    │
-│ Bench             llama-bench, история, A/B                            │
-│ Settings          профили, app settings, миграции                      │
-│ Tray/Autostart    headless-режим                                       │
-│ Updater           electron-updater                                     │
-└──────────────┬── preload: window.local.* (typed) ─────────────────────┘
+│ ManagementServer  /monet-local/v1/*  info · models · status · events   │
+│ Proxy             /v1/* → роутер:17172; /v1/models только loaded       │
+│                   ключ, сетевой гейт                                   │
+│ RouterController  генерирует INI из профилей, держит роутер, load/     │
+│                   unload через его HTTP, следит за детьми, сироты       │
+│ RuntimeManager    таблица ассетов, скачать/проверить, свой пак,         │
+│                   --list-devices                                        │
+│ ModelLibrary      папки, GGUF-метаданные, пары mmproj, индекс, slug-id  │
+│ Downloader        HF: resume, range-параллель, sha256, .part → переезд  │
+│ Estimator         память из GGUF + профиль + железо → verdict + why     │
+│ Bench             llama-bench, история, A/B                             │
+│ Settings          профили, app settings, миграции                       │
+│ Tray/Autostart    headless-режим                                        │
+│ Updater           electron-updater                                      │
+└──────────────┬── preload: window.local.* (typed) ──────────────────────┘
                │ ipc
-┌──────────────▼── renderer (React, lucide) ────────────────────────────┐
-│ stores: runtime · models · server · bench · ui (zustand)              │
+┌──────────────▼── renderer (React, lucide) ─────────────────────────────┐
+│ stores: runtime · models · server · bench · ui (zustand)               │
 │ экраны: Server · Models · Runtimes · Benchmark · Integrations · Settings│
-└───────────────────────────────────────────────────────────────────────┘
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Management API (`/monet-local/v1`)
+### Management API (`/monet-local/v1`) — только чтение снаружи
+
+Загрузка/выгрузка через HTTP **не** выставляется: управлять моделями можно
+только из окна Monet Local. Клиентам — статус и данные.
 
 | метод | путь | что |
 |---|---|---|
-| GET | `/info` | `{name, version, machine, llamaBuild, backend, defaults:{port}}` |
-| GET | `/models` | вся библиотека: `[{id, path, arch, quant, sizeBytes, ctxMax, kvBytesPerToken, vision, moe, mtp, loaded, defaultProfile, verdict:{fits,reason}}]` |
-| GET | `/status` | `{state, model, profile, port, startedAt, lastTimings}` |
-| POST | `/load` | `{model, profile?}` → `202`; прогресс — `/events` |
-| POST | `/unload` | |
-| GET | `/profiles` | профили и их флаги (для отображения в клиенте) |
-| GET | `/events` | SSE: `state`, `progress`, `timings` |
+| GET | `/info` | `{name, version, machine, llamaBuild, backend, capabilities:{openai, anthropic}}` |
+| GET | `/models` | вся библиотека: `[{id, path, arch, quant, sizeBytes, ctxMax, kvBytesPerToken, vision, moe, mtp, status: unloaded\|loading\|loaded, profile, verdict:{fits, reason}}]` |
+| GET | `/status` | `{routerState, loaded:[id], lastTimings}` |
+| GET | `/events` | SSE: `models-changed`, `status`, `timings` — чтобы клиент не опрашивал |
 
 `id` модели = стабильный slug из имени файла (`qwen3.8-27b-q4_k_m`), он же
-`model` в OpenAI/Anthropic-запросах. `/v1/models` прокси отдаёт те же id.
+`model` в OpenAI/Anthropic-запросах и имя секции в INI.
 
 ### Данные
 
 ```
 %APPDATA%/monet-local/
-├── settings.json      папки, тема, язык, порты, LAN, ключ (DPAPI)
+├── settings.json      папки, тема, язык, порты, сеть, ключ (DPAPI)
 ├── profiles/*.json    наборы флагов (+ модель, + рантайм)
+├── router/models.ini  сгенерировано из профилей, не редактировать руками
 ├── runtimes/<backend>-<build>/
+├── downloads/*.part   незавершённые загрузки
 ├── index/models.json  кэш GGUF-метаданных (путь+mtime+size)
 ├── bench/*.json
-└── logs/server-*.log
+└── logs/router-*.log, child-<id>-*.log
 ```
 
 ### GGUF-ридер (порт `gguf_meta.py`)
@@ -217,7 +252,8 @@ value_length`, `*.expert_count`, `*.ssm.*` + `*.full_attention_interval`
 (гибриды), `*.nextn_predict_layers` (MTP), `general.file_type`, наличие
 `blk.N.ffn_*_exps`, `tokenizer.chat_template` (из него — поддержка
 `reasoning_effort` / `enable_thinking` для клиента). Пара `mmproj-*.gguf` — по
-имени в папке.
+имени в папке; в INI ребёнка — `mmproj = <path>` и `mmproj-offload = 0`
+(проверено: проектор поверх весов на iGPU не влезает).
 
 ### Калькулятор памяти
 
@@ -228,32 +264,37 @@ value_length`, `*.expert_count`, `*.ssm.*` + `*.full_attention_interval`
 - compute-буферы ≈ 0.6–1.0 ГиБ;
 - iGPU (UMA): устройству доступно `выделенное + ~½ RAM`, и это та же RAM —
   потолок вердикта = общая RAM; дискретная GPU: потолок устройства = VRAM;
+- **несколько загруженных моделей суммируются** — вердикт для «загрузить ещё
+  и эту» считается от уже занятого;
 - вердикт `fits / tight / wont_fit` **с причиной и предложением**.
 
-### ServerController
+### RouterController
 
-`idle → starting → ready → stopping → idle`, ветки `failed` (allocation
-failed / OutOfDeviceMemory / `0xC0000409` / unknown arch / порт занят) и
-`crashed`. Готовность — `listening on` в логе **и** `/health`. Сироты —
-скан `llama-server.exe` до старта, tree-kill на выходе, pid-файл. Парсер
-`print_timing` → t/s; `model buffer size` → факт распределения памяти рядом с
-оценкой.
+`stopped → starting → ready → stopping`, ветки `failed` / `crashed`. Для
+каждой модели — `unloaded → loading → loaded` из `GET /models` роутера
+(опрос 1 с во время загрузки + `/events` наружу). Готовность роутера —
+`listening on` в логе **и** `/health`. Готовность модели — `status = loaded`
+**и** первый `/v1/models` с ней. Сироты — скан `llama-server.exe` до старта,
+tree-kill роутера с детьми на выходе, pid-файлы. Парсер логов детей:
+`print_timing` → t/s; `model buffer size` → факт памяти рядом с оценкой;
+`allocation of size N failed` / `OutOfDeviceMemory` / `0xC0000409` → причина
+провала в UI.
 
 ---
 
 ## 3. Экраны
 
 Сайдбар: **Server · Models · Runtimes · Benchmark · Integrations · Settings**.
-Справа — панель профиля (группы флагов, вердикт, превью команды), с любого
-экрана.
+Справа — панель профиля (группы флагов, вердикт, превью INI-секции и команды),
+с любого экрана.
 
-**Server.** Состояние · загруженная модель + профиль · Start/Stop/Restart ·
-адрес и ключ · командная строка (копировать) · живой лог с фильтром · факт
-памяти GPU/host · слоты · t/s последних запросов.
+**Server.** Состояние роутера · список загруженных моделей (профиль, память
+факт/оценка, t/s последних запросов, кнопка «выгрузить») · адрес и ключ ·
+живой лог с фильтром по ребёнку · слоты.
 
 **Models.** Папки · таблица GGUF (квант, размер, архитектура, dense/MoE,
-контекст, vision, MTP, вердикт) · карточка · «загрузить с профилем …» · HF:
-поиск → таблица квантов с вердиктом для этого железа → скачать.
+контекст, vision, MTP, вердикт, статус) · карточка · **«Загрузить с профилем …»**
+/ «Выгрузить» · HF: поиск → таблица квантов с вердиктом → скачать.
 
 **Runtimes.** Установленные паки · релизы · свой пак · устройства · выбор по
 умолчанию · «проверить» с крошечной моделью-фикстурой.
@@ -261,39 +302,47 @@ failed / OutOfDeviceMemory / `0xC0000409` / unknown arch / порт занят) 
 **Benchmark.** Модель + два профиля → `llama-bench` (pp/tg) → таблица,
 история, дельта. Пресеты: CPU vs GPU, ngl sweep, KV f16 vs q8_0, квант A vs B.
 
-**Integrations.** Карточки: **Code Monet** («в Code Monet выберите провайдера
-Monet Local — адрес подставится сам»; для другой машины — адрес и ключ с
-кнопками копирования), **Anthropic-совместимые клиенты** (`ANTHROPIC_BASE_URL`,
-`ANTHROPIC_API_KEY`), **OpenAI-совместимые** (Base URL, key). Тумблер
-«доступ по сети» с предупреждением и обязательным ключом.
+**Integrations.** Карточки: **Code Monet** («выберите провайдера Monet Local —
+адрес подставится сам»; для другой машины — адрес и ключ с копированием),
+**Anthropic-совместимые клиенты** (`ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY`),
+**OpenAI-совместимые** (Base URL, key). Тумблер «Доступ по сети» с
+объяснением и обязательным ключом.
 
 **Settings.** Папки, тема, язык (en/ru), порты, автозапуск/трей, обновления,
-экспорт/импорт профилей.
+экспорт/импорт профилей, Advanced: режим `router | single`, `--models-max`.
 
 ---
 
 ## 4. Часть 2 — изменения в Code Monet (`iaa2005/monet`)
 
 Цель: пользователь выбирает «Monet Local» и больше ничего не настраивает.
+Список моделей у такого провайдера **живой**: что загружено в Monet Local
+сейчас — то и есть. Этого в Code Monet ещё не было; вводится флаг вида
+провайдера.
 
-1. `src/main/provider/types.ts`: `ProviderKind` += `'monet-local'`.
-   Форма провайдера: имя, **Base URL с дефолтом `http://127.0.0.1:17171`**
-   (редактируемый — для другой машины), ключ (пусто для localhost). Кнопка
-   «Найти на этом компьютере» пробует дефолтный адрес → `/monet-local/v1/info`.
-2. `src/main/llm/fetch-models.ts`: для `monet-local` — `/monet-local/v1/models`
-   → модели с `contextLength` (ctxMax профиля), `modalities` (`image` при
-   mmproj), `supportsEffort` (по шаблону), `maxOutput`; бейджи «loaded» и
-   вердикт памяти в списке.
-3. Транспорт — существующий `openai-compat-client.ts` (reasoning_content и
-   tools уже есть). Выбор незагруженной модели → первый запрос триггерит
-   JIT-загрузку через прокси; композер показывает «загружается… N%» по
-   `/events`.
-4. Несколько провайдеров этого вида — по одному на машину; в списке моделей
+1. `src/main/provider/types.ts`: `ProviderKind` += `'monet-local'`; у
+   вида — `dynamicModels: true` (список не хранится как истина, а
+   обновляется с сервера).
+2. Форма провайдера: имя, **Base URL с дефолтом `http://127.0.0.1:17171`**
+   (редактируемый — для другой машины в сети), ключ (пусто для localhost).
+   Кнопка «Найти на этом компьютере» → `/monet-local/v1/info`.
+3. `src/main/llm/fetch-models.ts`: для `monet-local` — `/monet-local/v1/models`,
+   в список попадают только `status = loaded`; поля: `contextLength`
+   (ctxMax профиля), `modalities` (`image` при vision), `supportsEffort` (по
+   шаблону), `maxOutput`. Обновление: при открытии выбора модели, перед
+   отправкой (кэш 5 с) и по `/events` (`models-changed`) — подписка живёт,
+   пока провайдер выбран.
+4. Если выбранная в чате модель выгружена в Monet Local — не падать в
+   отправке, а показать «модель не загружена в Monet Local» с кнопкой
+   «обновить список». Если сервер недоступен — провайдер помечается офлайн,
+   последний список остаётся в сером.
+5. Транспорт — существующий `openai-compat-client.ts` (reasoning_content и
+   tools уже есть).
+6. Несколько провайдеров этого вида — по одному на машину; в списке моделей
    имя провайдера рядом с моделью.
-5. `docs/content/configuration/01-providers.md`: раздел «Monet Local».
-6. Fallback: если `/monet-local/v1/*` не отвечает, но `/v1/models` есть —
-   работать как обычный OpenAI-совместимый провайдер (старая версия Monet
-   Local или чужой сервер).
+7. `docs/content/configuration/01-providers.md`: раздел «Monet Local».
+8. Fallback: `/monet-local/v1/*` не отвечает, но `/v1/models` есть → обычный
+   OpenAI-совместимый провайдер (старая версия или чужой сервер).
 
 ---
 
@@ -306,29 +355,30 @@ Monet Local — адрес подставится сам»; для другой 
 ставится, открывает оранжевое окно в стиле Monet на двух языках.*
 
 **M1 — рантаймы и модели (2–3 дня).** RuntimeManager (таблица, скачивание,
-свой пак, `--list-devices`); GGUF-ридер; ModelLibrary; экраны Runtimes и
-Models (без HF). *Готово: видит `D:\Colibri\models`, показывает архитектуру,
-квант, KV на токен.*
+свой пак, `--list-devices`); GGUF-ридер; ModelLibrary со slug-id; экраны
+Runtimes и Models (без HF). *Готово: видит `D:\Colibri\models`, показывает
+архитектуру, квант, KV на токен.*
 
-**M2 — профили, калькулятор, сервер (3–4 дня).** Реестр флагов; панель
-профиля; превью; Estimator; ServerController (`--no-webui`); экран Server;
-живая проверка `/v1/chat/completions` **и** `/v1/messages`. *Готово: профиль
-«8192 / Vulkan» стартует Qwen3.8-27B и показывает 4.3 t/s; профиль «262144
-без nkvo» до запуска говорит «не влезет: KV 16 ГиБ + веса 15.65 > 27.7».*
+**M2 — профили, калькулятор, роутер (3–4 дня).** Реестр флагов; панель
+профиля; генерация INI; Estimator; RouterController (`--no-webui`,
+`--no-models-autoload`); load/unload из UI; экран Server; живая проверка
+`/v1/chat/completions` **и** `/v1/messages` через роутер. *Готово: профиль
+«8192 / Vulkan» грузит Qwen3.8-27B и показывает 4.3 t/s; профиль «262144 без
+nkvo» до загрузки говорит «не влезет: KV 16 ГиБ + веса 15.65 > 27.7».*
 
-**M3 — management API и прокси (2–3 дня).** `/monet-local/v1/*`, прокси
-`/v1/*` с SSE, JIT-загрузка, очередь/503, ключ, LAN-режим, трей, автозапуск,
-экран Integrations. *Готово: Claude Code с `ANTHROPIC_BASE_URL=http://127.0.0.1:17171`
-и curl на `/v1/chat/completions` работают; запрос к незагруженной модели
-загружает её.*
+**M3 — management API и прокси (2 дня).** `/monet-local/v1/*`, `/events`,
+прокси `/v1/*` с SSE и фильтром `loaded`, ключ, доступ по сети, трей,
+автозапуск, экран Integrations. *Готово: Claude Code с
+`ANTHROPIC_BASE_URL=http://127.0.0.1:17171` и curl на `/v1/chat/completions`
+работают; `/v1/models` показывает только загруженные.*
 
-**M4 — Code Monet (2–3 дня, в репо `monet`).** Provider kind `monet-local`,
-форма с дефолтом, discovery, модели с метаданными и вердиктом, прогресс
-JIT-загрузки, docs. *Готово: в Code Monet «Add provider → Monet Local →
-Save» без единого поля, модели на месте, чат идёт.*
+**M4 — Code Monet (2–3 дня, в репо `monet`).** Provider kind `monet-local` с
+`dynamicModels`, форма с дефолтом, discovery, живой список, офлайн-состояние,
+docs. *Готово: «Add provider → Monet Local → Save» без единого поля, модели
+появляются и исчезают вслед за Monet Local, чат идёт.*
 
 **M5 — бенчмарк и HF-загрузчик (2–3 дня).** llama-bench, история, A/B; HF
-поиск/кванты/вердикт, resume, очередь.
+поиск/кванты/вердикт, `.part` + переезд, очередь.
 
 **M6 — полировка и релиз (1–2 дня).** updater, парсер `--help` новых сборок,
 README с GIF, `v0.1.0`.
@@ -348,18 +398,19 @@ README с GIF, `v0.1.0`.
 
 ## 7. Тесты
 
-vitest на чистых модулях (`buildArgs`, GGUF-ридер на заголовках реальных
-файлов, Estimator на Приложении A как assert'ах, парсеры логов и устройств,
-RuntimeManager, прокси/JIT на фейковом upstream); smoke-пробы в духе monet
-(старт/стоп с ~30 МБ фикстурой, `/health`, один запрос по каждому API);
-typecheck-gate.
+vitest на чистых модулях (`buildIni`/`buildArgs`, GGUF-ридер на заголовках
+реальных файлов, Estimator на Приложении A как assert'ах, парсеры логов и
+устройств, RuntimeManager, прокси-фильтр `/v1/models` на записанном ответе
+роутера из `docs/reference/router-models-b10826.json`); smoke-пробы в духе
+monet (роутер + load/unload крошечной фикстуры, `/health`, один запрос по
+каждому API); typecheck-gate.
 
-## 8. Осталось решить
+## 8. Решено
 
-1. **Порт** — `17171` устраивает? (Второй, `17172`, внутренний.)
-2. **LAN по умолчанию выключен**, ключ обязателен при включении — ок?
-3. **JIT-загрузка** — включена по умолчанию, или клиент должен явно жать
-   «загрузить» в Monet Local?
+- Порт `17171` (роутер внутри на `17172`).
+- Доступ по сети выключен по умолчанию; при включении ключ обязателен.
+- Без JIT: загрузкой управляет только Monet Local; клиенты видят живой
+  список загруженных.
 
 ---
 
@@ -382,6 +433,11 @@ Ryzen 7 7840HS · 2×16 ГБ DDR5-5600 · Radeon 780M (UMA, 4 ГБ выделе�
 | `--spec-type draft-mtp` + nkvo | **1.40** | — | в 17× хуже базы |
 | `--spec-type ngram-mod` | 25.5 | 4.39 | шум |
 | mmproj на GPU поверх весов | — | OutOfDeviceMemory | `--no-mmproj-offload` |
+
+Router-режим b10826: `POST /models/load` / `/models/unload` с `{"model": id}`
+→ `{"success": true}`; `GET /models` со `status.value`, `status.args`,
+`status.preset`; незагруженная при `--no-models-autoload` → `400 model not
+found`; дети — `llama-server --port 0` с унаследованными флагами.
 
 Потолок генерации ≈ 4.3 t/s = полоса DDR5 (~90 ГБ/с) / 16 ГБ весов на токен.
 

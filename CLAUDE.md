@@ -42,6 +42,17 @@ npm run package      electron-builder → release/*.exe
   it. Never build a command line anywhere else.
 - **`--no-webui` always. Tools, MCP, `--agent` never.** Not in the registry,
   not in any preset. The server spends nothing on them.
+- **Router mode, never `--models-dir`.** One `llama-server` router with a
+  generated `--models-preset` INI and `--no-models-autoload`; models are
+  loaded/unloaded with `POST /models/load|unload {"model": id}`. The
+  `--models-dir` heuristic treats a folder as one model and picked the 22 GB
+  Q6_K out of `Qwen3.8-27B-GGUF\` — the one that does not fit.
+- **Downloads never land in a models folder until complete.** They go to
+  `%APPDATA%/monet-local/downloads/*.part`; the router happily tried to load
+  a half-downloaded GGUF.
+- **`/v1/models` on the public port lists only `loaded` models.** The full
+  list with statuses is `/monet-local/v1/models`. No JIT loading; a request
+  for an unloaded model returns the router's `400 model not found`.
 - **`--no-repack` defaults on.** Repack keeps a second copy of Q4_K weights;
   on 32 GB it turned a working model into a swap storm and a `0xC0000409`.
 - **Bind `127.0.0.1` by default.** LAN mode is an explicit toggle and makes
