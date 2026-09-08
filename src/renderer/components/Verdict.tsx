@@ -6,13 +6,18 @@ import { Badge, StackedBar, Stat } from '@/components/ui/page'
 import { cn } from '@/lib/utils'
 import { useT } from '@/stores/uiStore'
 
+const WEIGHTS = 'bg-foreground/70'
+const KV = 'bg-brand'
+const COMPUTE = 'bg-foreground/30'
+
 /**
  * The verdict, with its reasons and what to do about them.
  *
- * Laid out like a dashboard tile rather than a sentence: the two numbers
- * that matter (total, headroom) are large, the parts are a bar against the
- * machine's ceiling, and the findings sit under them. A red badge on its own
- * would be no better than what we already had.
+ * Two meters rather than one, because there are two ceilings and a profile
+ * has to clear both. Showing only the RAM budget is how a "will not fit"
+ * verdict came to sit above a bar that looked comfortable: RAM was fine, and
+ * the GPU — which is what the estimate actually refused on — was not drawn
+ * at all.
  */
 export function Verdict({
   estimate: e,
@@ -49,46 +54,65 @@ export function Verdict({
         </span>
       </div>
 
+      {/* What the profile costs, once. The ceilings it is measured against
+          are on the meters below, so no number appears twice. */}
       <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
         <Stat label={t('verdict.total')} value={bytes(e.totalBytes)} />
-        <Stat
-          label={t('verdict.headroom')}
-          value={bytes(Math.max(0, e.headroomBytes))}
-          tone={tone}
-        />
         <Stat label={t('verdict.weights')} value={bytes(e.weightsBytes)} />
         <Stat label={t('verdict.kv')} value={bytes(e.kvBytes)} />
+        <Stat label={t('verdict.compute')} value={bytes(e.computeBytes)} />
       </div>
 
-      {/* Parts against the ceiling: the bar says "the cache is most of it"
-          before anyone reads the numbers. */}
-      <StackedBar
-        className="mt-4"
-        total={e.ramCeiling}
+      <Meter
+        label={t('verdict.ram')}
+        ceiling={e.ramCeiling}
         parts={[
-          { label: t('verdict.weights'), value: e.weightsBytes, className: 'bg-foreground/70' },
-          { label: t('verdict.kv'), value: e.kvBytes, className: 'bg-brand' },
-          { label: t('verdict.compute'), value: e.computeBytes, className: 'bg-foreground/30' },
+          { label: t('verdict.weights'), value: e.weightsBytes, className: WEIGHTS },
+          { label: t('verdict.kv'), value: e.kvBytes, className: KV },
+          { label: t('verdict.compute'), value: e.computeBytes, className: COMPUTE },
         ]}
       />
-      <div className="mt-1.5 flex flex-wrap gap-x-4 text-[11px] text-muted-foreground">
+
+      {/* On an integrated GPU this is a slice of the same RAM rather than
+          extra capacity — a second, lower wall, and usually the one that is
+          hit first. */}
+      {e.deviceParts && e.deviceCeiling !== undefined ? (
+        <Meter
+          label={`${t('verdict.gpu')}${
+            e.findings.find((f) => f.code === 'exceeds-device')?.device
+              ? ` · ${e.findings.find((f) => f.code === 'exceeds-device')?.device}`
+              : ''
+          }`}
+          ceiling={e.deviceCeiling}
+          parts={[
+            {
+              label: t('verdict.weights'),
+              value: e.deviceParts.weightsBytes,
+              className: WEIGHTS,
+            },
+            { label: t('verdict.kv'), value: e.deviceParts.kvBytes, className: KV },
+            {
+              label: t('verdict.compute'),
+              value: e.deviceParts.computeBytes,
+              className: COMPUTE,
+            },
+          ]}
+        />
+      ) : null}
+
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
         <span>
-          <i className="mr-1 inline-block size-2 rounded-sm bg-foreground/70 align-middle" />
+          <i className={cn('mr-1 inline-block size-2 rounded-sm align-middle', WEIGHTS)} />
           {t('verdict.weights')}
         </span>
         <span>
-          <i className="mr-1 inline-block size-2 rounded-sm bg-brand align-middle" />
+          <i className={cn('mr-1 inline-block size-2 rounded-sm align-middle', KV)} />
           {t('verdict.kv')}
         </span>
         <span>
-          <i className="mr-1 inline-block size-2 rounded-sm bg-foreground/30 align-middle" />
-          {t('verdict.compute')} {bytes(e.computeBytes)}
+          <i className={cn('mr-1 inline-block size-2 rounded-sm align-middle', COMPUTE)} />
+          {t('verdict.compute')}
         </span>
-        {e.deviceBytes !== undefined ? (
-          <span className="ml-auto">
-            {t('verdict.deviceUse')}: <b>{bytes(e.deviceBytes)}</b> / {bytes(e.deviceCeiling)}
-          </span>
-        ) : null}
       </div>
 
       {e.findings.length ? (
@@ -114,7 +138,7 @@ export function Verdict({
               type="button"
               disabled={!onApply}
               onClick={() => onApply?.(s)}
-              className="h-8 rounded-lg border border-border bg-card px-3 text-xs font-medium transition-colors hover:bg-accent disabled:opacity-60"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-medium transition-colors hover:bg-accent disabled:opacity-60"
             >
               {t(`fix.${s.code}` as StringKey)}
               {s.value !== undefined ? (
@@ -124,6 +148,47 @@ export function Verdict({
           ))}
         </div>
       ) : null}
+    </div>
+  )
+}
+
+/**
+ * One budget: what it costs, what the ceiling is, and whether it clears it.
+ * The numbers on the right are the bar in words, so the answer does not
+ * depend on reading pixel widths.
+ */
+function Meter({
+  label,
+  parts,
+  ceiling,
+}: {
+  label: string
+  parts: { label: string; value: number; className: string }[]
+  ceiling: number
+}): JSX.Element {
+  const t = useT()
+  const used = parts.reduce((n, p) => n + p.value, 0)
+  const slack = ceiling - used
+  return (
+    <div className="mt-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-[13px]">
+        <span className="font-medium">{label}</span>
+        <span className="tabular-nums text-muted-foreground">
+          <b className="font-display text-[15px] text-foreground">{bytes(used)}</b>
+          {' / '}
+          {bytes(ceiling)}
+          {slack < 0 ? (
+            <b className="ml-2 text-red-text">
+              {t('verdict.overBy')} {bytes(-slack)}
+            </b>
+          ) : (
+            <span className="ml-2">
+              {bytes(slack)} {t('verdict.free')}
+            </span>
+          )}
+        </span>
+      </div>
+      <StackedBar className="mt-1.5" parts={parts} total={ceiling} />
     </div>
   )
 }

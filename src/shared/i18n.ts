@@ -122,6 +122,12 @@ export const en = {
   'verdict.total': 'Total',
   'verdict.headroom': 'Headroom',
   'verdict.deviceUse': 'On the GPU',
+  'verdict.ram': 'RAM',
+  'verdict.gpu': 'GPU',
+  'verdict.free': 'free',
+  'verdict.overBy': 'over by',
+  'verdict.ceilingHint':
+    'Two ceilings, and a profile has to clear both: everything must fit in RAM, and whatever is offloaded must fit in what the GPU will allocate.',
 
   'finding.exceeds-ram': 'Over the RAM budget by',
   'finding.exceeds-device': 'Over what the GPU will allocate, by',
@@ -325,6 +331,12 @@ export const ru: Record<StringKey, string> = {
   'verdict.total': 'Итого',
   'verdict.headroom': 'Запас',
   'verdict.deviceUse': 'На видеокарте',
+  'verdict.ram': 'Оперативная память',
+  'verdict.gpu': 'Видеокарта',
+  'verdict.free': 'свободно',
+  'verdict.overBy': 'превышение на',
+  'verdict.ceilingHint':
+    'Потолка два, и профиль должен пройти оба: всё должно поместиться в оперативную память, а то, что уходит на видеокарту, — в то, что она согласится выделить.',
 
   'finding.exceeds-ram': 'Превышение бюджета RAM на',
   'finding.exceeds-device': 'Больше, чем выделит видеокарта, на',

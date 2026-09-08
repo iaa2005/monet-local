@@ -168,3 +168,31 @@ describe('estimate — honesty about what it does not know', () => {
     expect(ngl0.deviceBytes).toBeDefined()
   })
 })
+
+describe('the two budgets are different sums', () => {
+  it('publishes the device parts, and they add up to the device figure', () => {
+    const e = estimate(base({ ...COMMON, ctxSize: 8192 }))
+    const parts = e.deviceParts!
+    expect(
+      parts.weightsBytes + parts.kvBytes + parts.computeBytes,
+    ).toBeCloseTo(e.deviceBytes!, 0)
+  })
+
+  it('costs more on the GPU than in RAM at the same context', () => {
+    // The reason one bar could not answer for both: the device holds the
+    // file rather than its repacked copy, and its cache carries the
+    // allocator's overhead. A UI that drew the RAM parts against the device
+    // ceiling would be drawing neither budget.
+    const e = estimate(base({ ...COMMON, ctxSize: 16384 }))
+    expect(e.deviceParts!.kvBytes).toBeGreaterThan(e.kvBytes)
+    expect(e.deviceBytes!).toBeGreaterThan(e.deviceCeiling!)
+    // ...while RAM has room to spare. Both are true at once, which is
+    // exactly what the verdict has to show.
+    expect(e.totalBytes).toBeLessThan(e.ramCeiling)
+  })
+
+  it('drops the device budget entirely when the cache is not offloaded', () => {
+    const e = estimate(base({ ...COMMON, ctxSize: 32768, noKvOffload: true }))
+    expect(e.deviceParts!.kvBytes).toBe(0)
+  })
+})

@@ -215,9 +215,14 @@ export function Stat({
 }
 
 /**
- * A stacked bar: parts of one whole against a ceiling. The memory budget is
- * exactly this shape — weights, cache, buffers, and how much of the machine
- * they leave — and a bar says it faster than four numbers.
+ * A stacked bar: parts of one whole against a ceiling it is allowed to
+ * exceed.
+ *
+ * The bar is scaled to whichever is larger, the ceiling or the sum, so parts
+ * that do not fit stick out past a marked ceiling instead of being clipped
+ * to it. Clipping is what let a "will not fit" verdict sit above a bar that
+ * looked comfortable: each part was clamped to 100% on its own and the
+ * overrun simply had nowhere to be drawn.
  */
 export function StackedBar({
   parts,
@@ -225,20 +230,45 @@ export function StackedBar({
   className,
 }: {
   parts: { label: string; value: number; className: string }[]
-  /** What 100% means — the ceiling, not the sum. */
+  /** The ceiling. Not necessarily the sum, and not necessarily larger. */
   total: number
   className?: string
 }): JSX.Element {
+  const sum = parts.reduce((n, p) => n + p.value, 0)
+  const scale = Math.max(total, sum) || 1
+  const over = sum > total
+  const pct = (n: number): string => `${(n / scale) * 100}%`
   return (
-    <div className={cn('flex h-2.5 w-full overflow-hidden rounded-full bg-muted', className)}>
-      {parts.map((p) => (
-        <div
-          key={p.label}
-          title={p.label}
-          className={cn('h-full', p.className)}
-          style={{ width: `${Math.max(0, Math.min(100, (p.value / total) * 100))}%` }}
-        />
-      ))}
+    <div className={cn('relative h-2.5', className)}>
+      <div className="flex h-full w-full overflow-hidden rounded-full bg-muted">
+        {parts.map((p) => (
+          <div
+            key={p.label}
+            title={p.label}
+            className={cn('h-full', p.className)}
+            style={{ width: pct(p.value) }}
+          />
+        ))}
+      </div>
+      {over ? (
+        <>
+          {/* Everything past the ceiling, hatched: the memory that has
+              nowhere to live. */}
+          <div
+            className="pointer-events-none absolute inset-y-0 right-0 rounded-r-full"
+            style={{
+              left: pct(total),
+              backgroundImage:
+                'repeating-linear-gradient(135deg, var(--red-text) 0 2px, transparent 2px 5px)',
+            }}
+          />
+          {/* The ceiling itself, drawn where it falls rather than at the end. */}
+          <div
+            className="pointer-events-none absolute -inset-y-1 w-0.5 bg-foreground"
+            style={{ left: pct(total) }}
+          />
+        </>
+      ) : null}
     </div>
   )
 }

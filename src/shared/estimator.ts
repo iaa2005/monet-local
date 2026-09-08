@@ -103,6 +103,18 @@ export interface Estimate {
   deviceCeiling?: number
   /** What would sit on the device with this profile. */
   deviceBytes?: number
+  /**
+   * The parts of that figure. Published rather than left for the UI to
+   * recompute: the device budget is not the RAM budget with a different
+   * ceiling — the weights are the file rather than its repacked copy, and
+   * the cache carries the allocator's overhead — and a bar that redid the
+   * arithmetic itself would drift from the verdict beside it.
+   */
+  deviceParts?: {
+    weightsBytes: number
+    kvBytes: number
+    computeBytes: number
+  }
   findings: Finding[]
   suggestions: Suggestion[]
 }
@@ -175,6 +187,7 @@ export function estimate(input: EstimateInput): Estimate {
   const device = hw.devices[0]
   let deviceCeiling: number | undefined
   let deviceBytes: number | undefined
+  let deviceParts: Estimate['deviceParts']
   // `--device none` is what actually takes the GPU out of play. `-ngl 0`
   // leaves the backend selected with nothing offloaded, which is a different
   // (and on some models, fatal) thing — see the device flag's help.
@@ -185,6 +198,11 @@ export function estimate(input: EstimateInput): Estimate {
       p['noKvOffload'] === true ? 0 : kvBytes * DEVICE_KV_OVERHEAD
     // Repack's second copy is a CPU-side layout; the device holds the
     // original weights.
+    deviceParts = {
+      weightsBytes: input.fileBytes,
+      kvBytes: kvOnDevice,
+      computeBytes: compute,
+    }
     deviceBytes = input.fileBytes + kvOnDevice + compute
     if (deviceBytes > deviceCeiling) {
       level = 'wont_fit'
@@ -235,6 +253,7 @@ export function estimate(input: EstimateInput): Estimate {
     headroomBytes,
     ...(deviceCeiling !== undefined ? { deviceCeiling } : {}),
     ...(deviceBytes !== undefined ? { deviceBytes } : {}),
+    ...(deviceParts !== undefined ? { deviceParts } : {}),
     findings,
     // The same suggestion can arrive from two branches; the user needs it once.
     suggestions: suggestions.filter(
