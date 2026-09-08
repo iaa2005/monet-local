@@ -32,8 +32,24 @@ App icon source: `build/icon-source.png`.
 npm run dev          electron-vite dev (via scripts/dev-quiet.mjs)
 npm run typecheck    gate, must be clean
 npm test             vitest on pure modules
-npm run package      electron-builder → release/*.exe
+npm run package      electron-builder -> release/*.exe   (CI, or a dev box
+                     with Windows Developer Mode on)
+npm run package:local  same, minus rcedit -- see below
 ```
+
+**Packaging on a Windows dev box.** `npm run package` needs to create symbolic
+links while unpacking electron-builder's `winCodeSign` archive (it carries
+macOS dylibs as symlinks), and Windows refuses that without administrator
+rights or Developer Mode. The build then retries three times and dies with
+`Cannot create symbolic link`, leaving `release/win-unpacked` and no
+installer.
+
+`npm run package:local` passes `--config.win.signAndEditExecutable=false`,
+which skips the rcedit step that needs it. The installer builds; the only
+loss is that the `.exe` carries Electron's default icon instead of ours.
+CI runs the real `npm run package` on `windows-latest`, where symlinks work,
+so shipped builds are unaffected. Turning on Developer Mode (Settings ->
+Privacy & security -> For developers) makes the full build work locally too.
 
 ## Rules that came from real failures
 

@@ -10,8 +10,23 @@ Local model server for Code Monet, built on llama.cpp. A server, not a chat.
   Monet, Claude Code, curl
 - A/B benchmark for profiles
 
+## Status
+
+**M0 — scaffold. Done.** Electron shell in the Code Monet design with the
+orange brand, English and Russian, light and dark, and a packaged installer.
+The six screens exist; five are placeholders until their milestone.
+
+Next: M1 — runtime packs and the model library.
+
+## Develop
+
+```
+npm install
+npm run dev            # electron-vite, hot reload
+npm run typecheck      # gate
+npm test               # vitest on the pure modules
+npm run package:local  # installer, on a dev box without Developer Mode
+```
+
 Plan and architecture: [docs/PLAN.md](docs/PLAN.md). Notes for agents:
 [CLAUDE.md](CLAUDE.md). llama.cpp flag reference: [docs/reference](docs/reference).
-
-Status: planning. First milestone is the Electron scaffold with the Monet
-design tokens, orange brand, and a packaged `.exe`.

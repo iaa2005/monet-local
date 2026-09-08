@@ -1,0 +1,8 @@
+node_modules/
+out/
+dist/
+release/
+*.log
+
+# Test fixtures downloaded on demand (a tiny GGUF for server probes).
+out-fixtures/

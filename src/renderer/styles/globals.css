@@ -1,0 +1,308 @@
+@import "tailwindcss";
+@source "../**/*.{ts,tsx}";
+
+/* ── The app's two typefaces, changed in ONE place ──────────────────────
+ *
+ * Every heading uses the `font-display` utility and every other surface
+ * inherits `--font-sans` from <body>, so swapping either face is editing the
+ * two declarations below — not hunting call sites. Ported from Code Monet,
+ * which arrived at the same arrangement after changing the display font
+ * meant editing nine files.
+ */
+@font-face {
+    font-family: "Bounded";
+    src: url("../fonts/Bounded-Variable.ttf") format("truetype-variations");
+    /* A variable font: one file covers the range, so a heading can be
+       semibold without loading a second file (or being faux-bolded). */
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
+
+:root {
+    /* THE DISPLAY FACE — headings, the wordmark, the zero states. */
+    --font-display: "Bounded", Georgia, serif;
+}
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Palette from Code Monet's design tokens (HSL). Canvas is a soft off-white
+ * (bg-100); elevated surfaces (cards, inputs) are white (bg-000).
+ */
+:root {
+    /* Everything derives from this one number (see the --radius-* scale
+       below), so one edit turns every card, menu, button and input from
+       precise to soft. 12px is the design file's `radius/base`. */
+    --radius: 12px;
+
+    /* The title bar's height, in ONE place: the header lays it out and the
+       window buttons are a FIXED layer covering exactly the same band. Two
+       hardcoded numbers drifted apart the moment the bar got shorter. */
+    --titlebar-h: 36px;
+
+    --bg-000: 0 0% 100%;
+    --bg-100: 0 0% 96.6%;
+    --bg-200: 220 4% 97%;
+    /* Hover, and nothing more — every menu, dropdown and list row uses
+       `--accent` for the row under the cursor. Selection asks for
+       --brand-wash by name instead. */
+    --bg-300: 220 4% 95%;
+    --bg-400: 220 3% 92%;
+
+    --text-000: 210 2.6% 7.6%;
+    --text-400: 210 3.1% 30%;
+
+    /* THE BRAND IS ORANGE, and it is two values, not one.
+     *
+     * `oklch(67.1967% 0.201986 42.2057)` = #f65e00 = hsl(23 100% 48.2%). It
+     * is spelled in HSL because every token here is an HSL triplet — the
+     * selection wash is `hsl(var(--brand) / 0.28)` and the edge is
+     * `hsl(var(--brand-hue) 91% 83.5%)`.
+     *
+     * The mark and the link cannot share it: #f65e00 measures 2.98:1 on this
+     * canvas, fine behind large glyphs and fills, unreadable as text. The
+     * link is walked down to 38% lightness, which measures 4.55:1 — just
+     * over AA. src/shared/brand.ts holds the arithmetic and brand.test.ts
+     * fails if either number moves the wrong way. */
+    --brand-hue: 23;
+    /* 48.2, not 48: a round 48 rounds to #f55e00, one step off the requested
+       colour. src/shared/brand.test.ts is what noticed. */
+    --brand: var(--brand-hue) 100% 48.2%;
+    --link: var(--brand-hue) 100% 38%;
+
+    --background: hsl(var(--bg-100));
+    --foreground: hsl(var(--text-000));
+    --card: hsl(var(--bg-000));
+    --card-foreground: hsl(var(--text-000));
+    --popover: hsl(var(--bg-000));
+    --popover-foreground: hsl(var(--text-000));
+
+    --primary: hsl(var(--text-000));
+    --primary-foreground: hsl(var(--bg-000));
+    --secondary: hsl(var(--bg-200));
+    --secondary-foreground: hsl(var(--text-000));
+    --muted: hsl(var(--bg-200));
+    --muted-foreground: hsl(var(--text-400));
+    --accent: hsl(var(--bg-300));
+    --accent-foreground: hsl(var(--text-000));
+
+    --destructive: hsl(0 79% 55.3%);
+    --destructive-foreground: hsl(0 0% 100%);
+
+    /* The brand behind a selection: a real alpha, not a pre-mixed solid, so
+       what is underneath shows through instead of being punched out. */
+    --brand-wash: hsl(var(--brand) / 0.12);
+    --brand-edge: hsl(var(--brand-hue) 91% 83.5%);
+
+    /* The middle step of a three-tone gauge: fine, getting full, nearly out.
+       Amber rather than the green/red pair below, which mean pass/fail — and
+       deliberately a different hue from the orange brand, so a memory warning
+       cannot be mistaken for an accent. */
+    --warn: hsl(45 94% 40%);
+
+    --green-bg: hsl(100 84% 42% / 0.12);
+    --green-text: hsl(100 84% 42%);
+    --green-border: hsl(100 84% 42% / 0.4);
+    --red-bg: hsl(341 88% 51% / 0.12);
+    --red-text: hsl(341 88% 51%);
+    --red-border: hsl(341 88% 51% / 0.4);
+
+    --border: hsl(210 15% 88%);
+    --input: hsl(210 15% 88%);
+    --ring: hsl(var(--brand));
+
+    --sidebar: hsl(var(--bg-100));
+    --sidebar-foreground: hsl(var(--text-000));
+    --sidebar-accent: hsl(var(--bg-200));
+    --sidebar-accent-foreground: hsl(var(--text-000));
+    --sidebar-border: hsl(210 15% 88%);
+}
+
+.dark {
+    /*
+     * A neutral, near-black stack with the CONTENT deepest and the chrome a
+     * step above it.
+     *
+     *   bg-000 #121212  panels, the content surface
+     *   bg-100 #181818  chrome — window, header, sidebar
+     *   bg-200 #1f1f1f  raised — inputs, menus, popovers
+     *   bg-300 #262626  selection / active
+     *   bg-400 #323232  strong hover
+     */
+    --bg-000: 0 0% 7.1%;
+    --bg-100: 0 0% 9.4%;
+    --bg-200: 0 0% 12.2%;
+    --bg-300: 0 0% 14.9%;
+    --bg-400: 0 0% 19.6%;
+
+    /* #d4d4d4 — soft white, not paper white. */
+    --text-000: 0 0% 83.1%;
+    --text-400: 0 0% 62%;
+
+    /* Dark needs no split: the brand lifted to 55% measures 6.45:1 on the
+       chrome, so the mark and the link share one value. */
+    --brand: var(--brand-hue) 100% 55%;
+    --link: var(--brand-hue) 100% 55%;
+
+    --background: hsl(var(--bg-100));
+    --foreground: hsl(var(--text-000));
+    --card: hsl(var(--bg-000));
+    --card-foreground: hsl(var(--text-000));
+    /* Menus lift OFF the deep surface rather than sinking into it — the one
+       place where a lighter step reads as "in front". */
+    --popover: hsl(var(--bg-200));
+    --popover-foreground: hsl(var(--text-000));
+
+    --primary: hsl(var(--text-000));
+    --primary-foreground: hsl(var(--bg-100));
+    --secondary: hsl(var(--bg-200));
+    --secondary-foreground: hsl(var(--text-000));
+    --muted: hsl(var(--bg-200));
+    --muted-foreground: hsl(var(--text-400));
+    --accent: hsl(var(--bg-300));
+    --accent-foreground: hsl(var(--text-000));
+
+    --destructive: hsl(0 67% 59.6%);
+    --destructive-foreground: hsl(0 0% 100%);
+
+    --warn: hsl(45 94% 55%);
+
+    /* A translucent tint needs more pigment on a deep surface than on paper. */
+    --brand-wash: hsl(var(--brand) / 0.15);
+    --brand-edge: hsl(var(--brand-hue) 50% 34%);
+
+    --green-bg: hsl(101 29% 47% / 0.16);
+    --green-text: hsl(101 29% 52%);
+    --green-border: hsl(101 29% 47% / 0.45);
+    --red-bg: hsl(0 85% 62% / 0.14);
+    --red-text: hsl(0 85% 62%);
+    --red-border: hsl(0 85% 62% / 0.4);
+
+    /* #333333 — a line you can see without it drawing the eye. */
+    --border: hsl(0 0% 20%);
+    --input: hsl(0 0% 24%);
+    --ring: hsl(var(--brand));
+
+    --sidebar: hsl(var(--bg-100));
+    --sidebar-foreground: hsl(var(--text-000));
+    --sidebar-accent: hsl(var(--bg-200));
+    --sidebar-accent-foreground: hsl(var(--text-000));
+    --sidebar-border: hsl(0 0% 20%);
+}
+
+@theme inline {
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
+    --color-green-bg: var(--green-bg);
+    --color-green-text: var(--green-text);
+    --color-green-border: var(--green-border);
+    --color-red-bg: var(--red-bg);
+    --color-red-text: var(--red-text);
+    --color-red-border: var(--red-border);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+    --color-brand: hsl(var(--brand));
+    --color-warn: var(--warn);
+    --color-brand-wash: var(--brand-wash);
+    --color-brand-edge: var(--brand-edge);
+    --color-link: hsl(var(--link));
+    --color-sidebar: var(--sidebar);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-border: var(--sidebar-border);
+
+    /* THE UI FACE — everything that is not a heading. */
+    --font-sans:
+        "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", ui-sans-serif,
+        Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono:
+        ui-monospace, "SFMono-Regular", "Cascadia Code", "Segoe UI Mono", Menlo,
+        Consolas, monospace;
+
+    /* The design names two radii and only two: md (8) and base (12). The ramp
+       rises to 12 and stops, so nothing is ever rounder than a card. */
+    --radius-sm: calc(var(--radius) * 0.333);
+    --radius-md: calc(var(--radius) * 0.667);
+    --radius-lg: var(--radius);
+    --radius-xl: var(--radius);
+    --radius-2xl: var(--radius);
+    --radius-3xl: var(--radius);
+}
+
+@layer base {
+    * {
+        border-color: var(--border);
+    }
+    .font-display {
+        font-family: var(--font-display);
+    }
+    ::selection {
+        background: hsl(var(--brand) / 0.28);
+    }
+    .dark ::selection {
+        background: hsl(var(--brand) / 0.35);
+    }
+    html,
+    body,
+    #root {
+        height: 100%;
+    }
+    body {
+        background: var(--background);
+        color: var(--foreground);
+        font-family: var(--font-sans);
+        font-size: 15px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+        /* The window is frameless: without this the whole page is a drag
+           handle only where we say so (see .app-drag). */
+        overflow: hidden;
+    }
+}
+
+/* The frameless window's title bar. Anything inside .app-drag moves the
+   window; controls within it must opt back out with .app-no-drag or they
+   become undraggable dead zones that also cannot be clicked. */
+@utility app-drag {
+    -webkit-app-region: drag;
+}
+@utility app-no-drag {
+    -webkit-app-region: no-drag;
+}
+
+@utility scrollbar-thin {
+    scrollbar-width: thin;
+    &::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+    &::-webkit-scrollbar-thumb {
+        background-color: color-mix(
+            in oklab,
+            var(--foreground) 18%,
+            transparent
+        );
+        border-radius: 9999px;
+    }
+    &::-webkit-scrollbar-track {
+        background: transparent;
+    }
+}

@@ -1,0 +1,46 @@
+appId: com.monetlocal.app
+productName: Monet Local
+directories:
+  output: release
+# GitHub Releases are both the DISTRIBUTION channel and the UPDATE feed:
+# `npm run release` uploads the installer + latest.yml here, and the packaged
+# app's electron-updater polls the same place.
+publish:
+  provider: github
+  owner: iaa2005
+  repo: monet-local
+  # A draft release is invisible to the updater, which made every release a
+  # two-step dance. Publish for real.
+  releaseType: release
+files:
+  - out/**/*
+  - build/icon.png
+# Runtime packs (llama.cpp binaries) are NOT listed here. They are downloaded
+# into %APPDATA%/monet-local/runtimes at runtime, and the two that ship with
+# the installer will arrive as extraResources in M1 — never inside app.asar,
+# which cannot spawn an executable.
+win:
+  target: nsis
+  # No .ico in the repo: electron-builder generates one from this PNG (585×585,
+  # comfortably over the 256px floor it requires).
+  icon: build/icon.png
+  forceCodeSigning: false
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    # electron-updater on macOS updates FROM the zip; a dmg-only publish
+    # leaves the packaged app silently unable to update.
+    - target: zip
+      arch: [arm64, x64]
+  icon: build/icon.png
+  category: public.app-category.developer-tools
+dmg:
+  writeUpdateInfo: false
+linux:
+  target: AppImage
+  icon: build/icon.png
+  category: Development
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
