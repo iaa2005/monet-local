@@ -4,6 +4,7 @@ import { bytes } from '@shared/format.js'
 import { Button } from '@/components/ui/button'
 import { Badge, Card, Empty, PageHeader, Section } from '@/components/ui/page'
 import { api } from '@/lib/api'
+import { ipcMessage } from '@/lib/errors'
 import { useT, useUi } from '@/stores/uiStore'
 import type {
   AvailableRuntimes,
@@ -37,7 +38,7 @@ export function Runtimes(): JSX.Element {
     try {
       await fn()
     } catch (e) {
-      setError((e as Error).message)
+      setError(ipcMessage(e))
     } finally {
       setBusy(null)
       setProgress(null)

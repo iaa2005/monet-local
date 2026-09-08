@@ -6,6 +6,7 @@ import type { Hardware, Profile } from '@shared/flags/types.js'
 import { Button } from '@/components/ui/button'
 import { Badge, Card, Empty, Section } from '@/components/ui/page'
 import { api } from '@/lib/api'
+import { ipcMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { useT } from '@/stores/uiStore'
 import type {
@@ -59,7 +60,7 @@ export function HuggingFace({
     try {
       await fn()
     } catch (e) {
-      setError((e as Error).message)
+      setError(ipcMessage(e))
     } finally {
       setBusy(null)
       setProgress(null)

@@ -23,10 +23,11 @@ import {
 import { basename, join } from 'node:path'
 import { unzipSync } from 'fflate'
 import type { BackendId } from '@shared/runtimes/catalog.js'
-import { backendById } from '@shared/runtimes/catalog.js'
+import { backendById, type BackendSpec } from '@shared/runtimes/catalog.js'
 import { parseDevices, type Device } from '@shared/runtimes/devices.js'
 import type { AvailablePack, Release } from '@shared/runtimes/release.js'
 import { runtimesDir } from '../app/settings-store.js'
+import { resolveLatestRelease } from './releases.js'
 
 export interface InstalledPack {
   /** Folder name, and the id settings store: `vulkan-b10826`. */
@@ -286,16 +287,16 @@ export function backendLabel(id: BackendId): string {
   return backendById(id)?.label ?? id
 }
 
-const RELEASES = 'https://api.github.com/repos/ggml-org/llama.cpp/releases'
-
-/** The newest llama.cpp release that actually has assets. */
-export async function fetchLatestRelease(): Promise<Release> {
-  const res = await fetch(`${RELEASES}?per_page=5`, {
-    headers: { accept: 'application/vnd.github+json' },
-  })
-  if (!res.ok) throw new Error(`GitHub: ${res.status} ${res.statusText}`)
-  const list = (await res.json()) as Release[]
-  const withAssets = list.find((r) => r.assets?.length > 0)
-  if (!withAssets) throw new Error('no llama.cpp release with assets')
-  return withAssets
+/**
+ * The newest llama.cpp build, resolved without the GitHub API.
+ *
+ * See runtimes/releases.ts for why: the API is capped at sixty
+ * unauthenticated requests an hour per IP, and hitting that shows the user a
+ * 403 they did not cause and cannot fix.
+ */
+export async function fetchLatestRelease(
+  backends: BackendSpec[],
+  token?: string,
+): Promise<Release> {
+  return resolveLatestRelease(backends, token)
 }

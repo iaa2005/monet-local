@@ -8,6 +8,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge, Card, Empty, PageHeader, Section } from '@/components/ui/page'
 import { api } from '@/lib/api'
+import { ipcMessage } from '@/lib/errors'
 import { useT } from '@/stores/uiStore'
 import type { ModelInfo, ProfilesFile, StoredRun } from '../../preload/index.js'
 
@@ -53,7 +54,7 @@ export function Benchmark(): JSX.Element {
       await api()?.bench.run(model.id, profile.name, profile.values)
       await refresh()
     } catch (e) {
-      setError((e as Error).message)
+      setError(ipcMessage(e))
     } finally {
       setBusy(false)
     }

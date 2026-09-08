@@ -30,6 +30,12 @@ export interface AppSettings {
   apiKey?: string
   /** Hugging Face token, for repositories behind a licence click. */
   hfToken?: string
+  /**
+   * Optional GitHub token. Runtime lookup does not need one — it avoids the
+   * API entirely — but a token raises the limit if you point this at a
+   * private mirror.
+   */
+  githubToken?: string
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -65,5 +71,6 @@ export function parseSettings(raw: unknown): AppSettings {
     networkAccess: o.networkAccess === true,
     ...(typeof o.apiKey === 'string' ? { apiKey: o.apiKey } : {}),
     ...(typeof o.hfToken === 'string' ? { hfToken: o.hfToken } : {}),
+    ...(typeof o.githubToken === 'string' ? { githubToken: o.githubToken } : {}),
   }
 }

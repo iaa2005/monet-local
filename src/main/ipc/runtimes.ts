@@ -26,15 +26,23 @@ function state(): unknown {
   return { installed, activeId: active?.id ?? null, chosenId: chosen ?? null }
 }
 
+let cache: { at: number; value: unknown } | null = null
+
 export function registerRuntimeIpc(): void {
   ipcMain.handle('runtimes:state', () => state())
 
-  ipcMain.handle('runtimes:available', async () => {
-    // Deliberately not cached: the list is small, and a stale one offers a
-    // build that no longer exists.
-    const release = await fetchLatestRelease()
-    const packs = packsIn(release, backendsFor(process.platform, process.arch))
-    return {
+  ipcMain.handle('runtimes:available', async (_e, force = false) => {
+    // Cached for an hour. Resolving a release costs one feed fetch plus a
+    // ranged request per asset, and re-running that every time the screen is
+    // opened is rude to GitHub and slow for the user. A new llama.cpp build
+    // appears several times a day, not several times a minute.
+    const now = Date.now()
+    if (!force && cache && now - cache.at < 60 * 60 * 1000) return cache.value
+
+    const backends = backendsFor(process.platform, process.arch)
+    const release = await fetchLatestRelease(backends, readSettings().githubToken)
+    const packs = packsIn(release, backends)
+    const value = {
       build: release.tag_name,
       publishedAt: release.published_at ?? null,
       packs: packs.map((p) => ({
@@ -51,6 +59,8 @@ export function registerRuntimeIpc(): void {
         _pack: p as AvailablePack,
       })),
     }
+    cache = { at: now, value }
+    return value
   })
 
   ipcMain.handle('runtimes:install', async (_e, pack: AvailablePack) => {
