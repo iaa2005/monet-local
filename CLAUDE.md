@@ -124,3 +124,31 @@ Dev machine: Ryzen 7840HS + Radeon 780M (Vulkan, UMA). Other backends are
 exercised through the same backend-agnostic RuntimeManager with recorded
 `--list-devices` fixtures and the recorded release JSON. Mark such packs
 "untested" in the UI until a user confirms them.
+
+## llama-bench is not llama-server
+
+They are different programs with different argument sets, and llama-bench
+**exits** on an argument it does not know rather than ignoring it — so a
+wrong flag does not degrade a measurement, it kills the run. Verify against
+`llama-bench --help` on the installed build before adding one; do not infer
+it from the server's flag registry. Two that do not carry across:
+
+- There is no `-c`/`--ctx-size`. Context is expressed as **depth** (`-d`):
+  the cache is sized from prompt + generation + depth. Passing `-c` is what
+  produced `invalid parameter for argument: -c`.
+- There is no `--no-repack` and no equivalent. The setting this app exists to
+  get right is the one a benchmark cannot vary, so it is reported as
+  uncovered rather than quietly assumed.
+
+Runs measured at different depths are not comparable: generation slows as the
+cache fills, so a ratio across depths reports the depth, not the profile.
+`BenchResult.depth` exists so the screen can refuse that comparison.
+
+## A Router outlives its process
+
+`Router` is a long-lived object; the llama-server it spawned is not. When the
+child exits, the object stays, and a load sent afterwards reached the UI as a
+bare `TypeError: fetch failed` with the ECONNREFUSED buried in its cause.
+Every call that talks to the router checks the process first and corrects the
+state on a failed connection, so the screen stops offering a button that
+cannot work.

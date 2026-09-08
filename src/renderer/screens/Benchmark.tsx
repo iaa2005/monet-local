@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Play } from 'lucide-react'
+import { tokens } from '@shared/format.js'
 import {
   bandwidthCeiling,
+  buildBenchArgs,
   compare,
   DDR5_5600_DUAL,
+  unsupportedByBench,
 } from '@shared/bench.js'
 import { Button } from '@/components/ui/button'
 import { Badge, Card, Empty, Page, PageHeader, Section, Stat } from '@/components/ui/page'
@@ -66,8 +69,15 @@ export function Benchmark(): JSX.Element {
   // Two runs of the same model are what a comparison is: the newest against
   // the one before it.
   const forModel = history.filter((r) => r.modelId === modelId)
-  const [latest, previous] = forModel
+  const latest = forModel[0]
+  // Only against a run measured at the same context. Generation slows as the
+  // cache fills, so "1.8x faster" between depth 512 and depth 8192 would be
+  // reporting the depth as if it were the profile.
+  const previous = forModel.find(
+    (r, i) => i > 0 && r.result.depth === latest?.result.depth,
+  )
   const delta = latest && previous ? compare(previous.result, latest.result) : null
+  const ignored = profile ? unsupportedByBench(profile.values) : []
 
   return (
     <Page>
@@ -129,6 +139,27 @@ export function Benchmark(): JSX.Element {
         </p>
       ) : null}
 
+      {/* What will run, before it runs — the same promise the server screen
+          makes about its command line. llama-bench exits on an argument it
+          does not know rather than ignoring it, so "what gets passed" is not
+          a detail. */}
+      {model && profile ? (
+        <div className="mt-5">
+          <pre className="overflow-x-auto rounded-xl border border-border bg-card p-4 text-xs leading-relaxed">
+            llama-bench{' '}
+            {buildBenchArgs(model.path, profile.values).join(' ')}
+          </pre>
+          {ignored.length ? (
+            // Said before the run, not after: a profile whose --no-repack
+            // cannot be honoured is not the profile being measured, and
+            // llama-bench has no equivalent for it at all.
+            <p className="mt-2 text-xs text-warn">
+              {t('bench.ignored')} {ignored.join(', ')}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {model ? (
         <div className="mt-6 grid grid-cols-3 gap-4">
           {/* The number that makes a measurement legible: on a dense model
@@ -176,8 +207,12 @@ export function Benchmark(): JSX.Element {
               <div key={r.id} className="px-4 py-3">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                   <span className="text-sm font-medium">{r.profileName}</span>
-                  <Badge>{r.modelId}</Badge>
                   <Badge>{r.result.backend}</Badge>
+                  {r.result.depth ? (
+                    <Badge tone="brand">
+                      {t('models.context')} {tokens(r.result.depth)}
+                    </Badge>
+                  ) : null}
                   <div className="flex-1" />
                   <span className="text-sm tabular-nums">
                     <span className="text-muted-foreground">{t('bench.prompt')}</span>{' '}

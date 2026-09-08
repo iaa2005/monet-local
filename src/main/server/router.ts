@@ -213,11 +213,28 @@ export class Router {
   }
 
   private async command(path: string, model: string): Promise<void> {
-    const res = await fetch(`${this.base()}${path}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ model }),
-    })
+    // A Router outlives its process: when llama-server exits, `child` goes
+    // null but this object stays, and a load sent afterwards reached the UI
+    // as a bare `TypeError: fetch failed` with an ECONNREFUSED buried in its
+    // cause. Answer for the process before asking it anything.
+    if (!this.child || this.stateValue !== 'ready') {
+      throw new Error(
+        this.lastError ?? 'llama-server is not running. Start the server first.',
+      )
+    }
+    let res: Response
+    try {
+      res = await fetch(`${this.base()}${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ model }),
+      })
+    } catch {
+      // It was up a moment ago and is not now. Correct the state as well as
+      // reporting, or the screen keeps offering a button that cannot work.
+      this.setState('failed', `llama-server stopped answering on port ${this.port}`)
+      throw new Error(`llama-server stopped answering on port ${this.port}`)
+    }
     if (!res.ok) {
       throw new Error(`${path}: ${res.status} ${await res.text()}`)
     }
