@@ -1,7 +1,10 @@
 import { existsSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { closeSync, mkdtempSync, openSync, readSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describeModel, modelId } from './describe.js'
-import { readGgufHeader } from './gguf.js'
+import { readGgufHeader, TruncatedGgufError } from './gguf.js'
 
 /**
  * The reader is checked against the real files on the dev machine when they
@@ -59,5 +62,27 @@ describe.skipIf(!haveReal)('readGgufHeader on a real model', () => {
     })
     expect(m.kvBytesPerToken).toBe(64 * 1024)
     expect(m.mmprojPath).toBe(MMPROJ)
+  })
+})
+
+describe.skipIf(!haveReal)('a download in progress', () => {
+  it('is refused rather than listed as a model', () => {
+    // Found live: a 1.47 GB slice of a 13 GB quant sat in the models folder
+    // with a perfectly valid header. The library listed it, the router wrote
+    // it into its preset, and loading it died with something unhelpful.
+    // The last tensor's offset is a floor on how big the file has to be.
+    const dir = mkdtempSync(join(tmpdir(), 'monet-gguf-'))
+    const partial = join(dir, 'partial.gguf')
+    // 12 MB: just past this model's header (10.5 MB of it is the 248,320-
+    // entry tokenizer) and nowhere near its weights, whose last tensor sits
+    // at the 15 GB mark. Read that prefix directly — pulling the whole 16 GB
+    // in to slice it is the sort of thing that makes a suite unrunnable.
+    const buf = Buffer.alloc(12 * 1024 * 1024)
+    const fd = openSync(REAL, 'r')
+    const n = readSync(fd, buf, 0, buf.length, 0)
+    closeSync(fd)
+    writeFileSync(partial, buf.subarray(0, n))
+
+    expect(() => readGgufHeader(partial)).toThrow(TruncatedGgufError)
   })
 })

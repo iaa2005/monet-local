@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { UiPrefs } from '@shared/prefs.js'
-import type { ModelFolder } from '@shared/settings.js'
+import type { AppSettings, ModelFolder } from '@shared/settings.js'
 import type { BackendId } from '@shared/runtimes/catalog.js'
 import type { Device } from '@shared/runtimes/devices.js'
 import type { InstalledPack } from '@main/runtimes/manager.js'
@@ -52,6 +52,14 @@ export interface ScanResult {
   failures: { path: string; error: string }[]
 }
 
+export interface EndpointInfo {
+  port: number
+  networkAccess: boolean
+  hasKey: boolean
+  apiKey: string | null
+  running: boolean
+}
+
 export interface EstimateResult {
   estimate: Estimate
   /** The exact command this profile would run, from the same registry. */
@@ -59,6 +67,7 @@ export interface EstimateResult {
 }
 
 export type {
+  AppSettings,
   Device,
   Estimate,
   Hardware,
@@ -135,6 +144,7 @@ const api = {
     strays: (): Promise<StrayProcess[]> => ipcRenderer.invoke('server:strays'),
     killStray: (pid: number): Promise<void> =>
       ipcRenderer.invoke('server:killStray', pid),
+    endpoint: (): Promise<EndpointInfo> => ipcRenderer.invoke('server:endpoint'),
     estimate: (modelId: string, values: Profile): Promise<EstimateResult> =>
       ipcRenderer.invoke('server:estimate', modelId, values),
     onStatus: (cb: (s: RouterStatus) => void): (() => void) => {
@@ -142,6 +152,12 @@ const api = {
       ipcRenderer.on('server:status', h)
       return () => ipcRenderer.off('server:status', h)
     },
+  },
+
+  settings: {
+    get: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
+    set: (patch: Partial<AppSettings>): Promise<AppSettings> =>
+      ipcRenderer.invoke('settings:set', patch),
   },
 
   profiles: {

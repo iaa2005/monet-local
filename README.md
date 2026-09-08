@@ -28,7 +28,13 @@ the GPU allocator will actually hand out. The router is llama.cpp's own
 multi-model mode: models load and unload over HTTP, and only Monet Local
 decides which.
 
-Next: M3 — the management API and the proxy that fronts both of them.
+**M3 — one port, both APIs. Done.** A gateway fronts the router: management
+API at `/monet-local/v1`, the OpenAI and Anthropic APIs at `/v1`, one key, one
+network toggle. `/v1/models` lists only what is loaded. An end-to-end test
+loads a real 16 GB model and checks a completion, a streamed completion and an
+Anthropic message all come back through it.
+
+Next: M4 — the Monet Local provider inside Code Monet.
 
 ## Develop
 

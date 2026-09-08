@@ -138,6 +138,22 @@ export const FLAGS: Registry = {
   },
 
   // ── gpu ────────────────────────────────────────────────────────────────
+  device: {
+    cli: '--device',
+    ini: 'device',
+    group: 'gpu',
+    level: 'basic',
+    type: 'enum',
+    options: [
+      { value: 'none', label: 'CPU only' },
+    ],
+    label: { en: 'Compute device', ru: 'Устройство расчёта' },
+    help: {
+      en: 'Empty means let llama.cpp choose. `none` is how you say CPU only — and it is the ONLY way to say it. Setting "layers on the GPU" to 0 looks equivalent and is not: on a Vulkan build the backend stays selected with nothing offloaded, and on a hybrid model that path aborts the process outright (exit 0xC0000409, no message).',
+      ru: 'Пусто — пусть llama.cpp выбирает сам. `none` означает «только процессор», и это ЕДИНСТВЕННЫЙ способ так сказать. Поставить «слоёв на видеокарте» = 0 выглядит тем же самым, но им не является: в сборке с Vulkan бэкенд остаётся выбранным, слои не выгружены, и на гибридной модели процесс просто падает (код 0xC0000409, без сообщения).',
+    },
+    visibleWhen: (_p, hw) => hw.devices.length > 0,
+  },
   nGpuLayers: {
     cli: '--n-gpu-layers',
     ini: 'n-gpu-layers',
@@ -148,8 +164,8 @@ export const FLAGS: Registry = {
     max: 999,
     label: { en: 'Layers on the GPU', ru: 'Слоёв на видеокарте' },
     help: {
-      en: 'Left empty, llama.cpp fits as many as it thinks will hold. Setting it by hand is how you find out the hard way that the last few layers had no room: the server refuses to start rather than falling back.',
-      ru: 'Если оставить пустым, llama.cpp сам подберёт, сколько поместится. Задавать вручную — верный способ узнать, что последним слоям места не хватило: сервер откажется стартовать, а не отступит.',
+      en: 'Left empty, llama.cpp fits as many as it thinks will hold. Setting it by hand is how you find out the hard way that the last few layers had no room: the server refuses to start rather than falling back. To run on the CPU, use the device setting above — 0 here is not the same thing and can crash the process.',
+      ru: 'Если оставить пустым, llama.cpp сам подберёт, сколько поместится. Задавать вручную — верный способ узнать, что последним слоям места не хватило: сервер откажется стартовать, а не отступит. Чтобы считать на процессоре, используйте настройку устройства выше: 0 здесь — не то же самое и может уронить процесс.',
     },
     visibleWhen: (_p, hw) => hw.devices.length > 0,
   },

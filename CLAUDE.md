@@ -69,6 +69,22 @@ Privacy & security -> For developers) makes the full build work locally too.
 - **`/v1/models` on the public port lists only `loaded` models.** The full
   list with statuses is `/monet-local/v1/models`. No JIT loading; a request
   for an unloaded model returns the router's `400 model not found`.
+- **`-ngl 0` is NOT how you run on the CPU. `--device none` is.** With a
+  GPU-capable build, zero offloaded layers leaves the backend selected, and on
+  a hybrid model llama.cpp aborts the process outright -- exit `0xC0000409`,
+  no message, right after "llama threadpool init". Cost half an hour to find;
+  the registry now has a device flag and the estimator keys off it.
+- **A GGUF header can be valid while the weights are missing.** A download in
+  progress listed itself as a model, went into the router's preset and died at
+  load time. The reader compares the last tensor's offset against the file
+  size and refuses.
+- **`--list-devices` free memory is not what you can allocate.** On a
+  shared-memory GPU it ignores what other applications have reserved: with
+  Photoshop open, llama.cpp could not allocate 150 MB while the same call
+  still reported 17373 MiB free. Never present that number as headroom.
+- **The Anthropic response puts thinking FIRST.** `content[0]` is a
+  `thinking` block; the answer is a later `text` one. A client that reads
+  `content[0].text` renders an empty message.
 - **`--no-repack` defaults on.** Repack keeps a second copy of Q4_K weights;
   on 32 GB it turned a working model into a swap storm and a `0xC0000409`.
 - **Bind `127.0.0.1` by default.** LAN mode is an explicit toggle and makes

@@ -156,9 +156,15 @@ describe('estimate — honesty about what it does not know', () => {
     expect(withVision.totalBytes - without.totalBytes).toBe(931_145_856)
   })
 
-  it('drops the device ceiling when nothing is on the GPU', () => {
-    const e = estimate(base({ ...COMMON, ctxSize: 65536, nGpuLayers: 0 }))
-    expect(e.deviceBytes).toBeUndefined()
-    expect(e.level).toBe('fits')
+  it('drops the device ceiling only for --device none', () => {
+    const cpu = estimate(base({ ...COMMON, ctxSize: 65536, device: 'none' }))
+    expect(cpu.deviceBytes).toBeUndefined()
+    expect(cpu.level).toBe('fits')
+
+    // -ngl 0 is NOT the same thing: the backend is still selected, so the
+    // device budget still applies. Treating them alike would have the
+    // estimator bless a configuration llama.cpp aborts on.
+    const ngl0 = estimate(base({ ...COMMON, ctxSize: 65536, nGpuLayers: 0 }))
+    expect(ngl0.deviceBytes).toBeDefined()
   })
 })

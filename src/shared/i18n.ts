@@ -152,6 +152,29 @@ export const en = {
   'flags.group.speculative': 'Speculative decoding',
   'flags.group.server': 'Server',
   'flags.group.advanced': 'Advanced',
+  'integrations.codeMonet': 'Code Monet',
+  'integrations.codeMonetHow':
+    'Add a provider of kind Monet Local. The address is filled in for you; leave the key empty on this computer.',
+  'integrations.anthropic': 'Claude Code and other Anthropic clients',
+  'integrations.anthropicHow':
+    'Set these two environment variables and the client talks to your local model instead.',
+  'integrations.openai': 'OpenAI-compatible clients',
+  'integrations.openaiHow':
+    'Any client that speaks /v1/chat/completions. The model list shows what is loaded right now.',
+  'integrations.baseUrl': 'Base URL',
+  'integrations.apiKey': 'API key',
+  'integrations.model': 'Model',
+  'integrations.anyKey': 'any value, or leave empty',
+  'integrations.copy': 'Copy',
+  'integrations.copied': 'Copied',
+  'integrations.notRunning':
+    'Start the server to make these addresses answer.',
+  'integrations.network': 'Access from the network',
+  'integrations.networkHelp':
+    'Off, Monet Local answers only this computer. On, other machines on your network reach it at this address — which is how you add a second Monet Local to Code Monet from another PC. An API key becomes required, because otherwise anyone on the same network can use your model.',
+  'integrations.keyRequired': 'Set an API key before turning this on.',
+  'settings.server': 'Server',
+  'settings.port': 'Port',
   'window.minimize': 'Minimize',
   'window.maximize': 'Maximize',
   'window.restore': 'Restore',
@@ -296,6 +319,29 @@ export const ru: Record<StringKey, string> = {
   'flags.group.speculative': 'Спекулятивное декодирование',
   'flags.group.server': 'Сервер',
   'flags.group.advanced': 'Дополнительно',
+  'integrations.codeMonet': 'Code Monet',
+  'integrations.codeMonetHow':
+    'Добавьте провайдера вида Monet Local. Адрес подставится сам; ключ на этом компьютере можно оставить пустым.',
+  'integrations.anthropic': 'Claude Code и другие клиенты Anthropic',
+  'integrations.anthropicHow':
+    'Задайте две переменные окружения — и клиент пойдёт к вашей локальной модели.',
+  'integrations.openai': 'Клиенты, совместимые с OpenAI',
+  'integrations.openaiHow':
+    'Любой клиент, понимающий /v1/chat/completions. В списке моделей — то, что загружено сейчас.',
+  'integrations.baseUrl': 'Базовый адрес',
+  'integrations.apiKey': 'Ключ API',
+  'integrations.model': 'Модель',
+  'integrations.anyKey': 'любое значение или пусто',
+  'integrations.copy': 'Копировать',
+  'integrations.copied': 'Скопировано',
+  'integrations.notRunning':
+    'Запустите сервер, чтобы эти адреса отвечали.',
+  'integrations.network': 'Доступ по сети',
+  'integrations.networkHelp':
+    'Выключено — Monet Local отвечает только этому компьютеру. Включено — до него дотянутся другие машины вашей сети по этому адресу; так и добавляют второй Monet Local в Code Monet с другого ПК. Ключ API становится обязательным: иначе вашу модель сможет гонять любой в той же сети.',
+  'integrations.keyRequired': 'Сначала задайте ключ API.',
+  'settings.server': 'Сервер',
+  'settings.port': 'Порт',
   'window.minimize': 'Свернуть',
   'window.maximize': 'Развернуть',
   'window.restore': 'Восстановить',

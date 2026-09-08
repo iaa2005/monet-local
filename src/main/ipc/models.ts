@@ -4,6 +4,11 @@ import { getMainWindow } from '../app/main-window.js'
 import { scanFolders } from '../models/library.js'
 
 export function registerModelIpc(): void {
+  ipcMain.handle('settings:get', () => readSettings())
+  ipcMain.handle('settings:set', (_e, patch: unknown) =>
+    writeSettings(patch as Parameters<typeof writeSettings>[0]),
+  )
+
   ipcMain.handle('models:folders', () => readSettings().modelFolders)
 
   ipcMain.handle('models:scan', () => {

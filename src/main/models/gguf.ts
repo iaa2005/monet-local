@@ -36,6 +36,16 @@ export interface GgufHeader {
   fileSize: number
 }
 
+/** A file whose header is fine but whose weights are not all there. */
+export class TruncatedGgufError extends Error {
+  constructor(readonly haveBytes: number, readonly needBytes: number) {
+    super(
+      `GGUF is incomplete: ${haveBytes} bytes on disk, header describes at least ${needBytes}`,
+    )
+    this.name = 'TruncatedGgufError'
+  }
+}
+
 enum T {
   UINT8 = 0,
   INT8 = 1,
@@ -76,6 +86,11 @@ class Reader {
     const read = readSync(this.fd, next, 0, want, 0)
     if (read < this.pos + n) throw new Error('GGUF file ends inside its header')
     this.buf = next.subarray(0, read)
+  }
+
+  /** Where the cursor is — the header's size, once the tables are read. */
+  get position(): number {
+    return this.pos
   }
 
   /** Skip forward without materialising anything — for arrays we discard. */
@@ -240,12 +255,23 @@ export function readGgufHeader(path: string): GgufHeader {
     // Names tell dense from MoE (`blk.N.ffn_gate_exps`) and reveal the MTP
     // head, which no metadata key states outright.
     const tensorNames: string[] = []
+    let lastOffset = 0
     for (let i = 0; i < tensorCount; i++) {
       tensorNames.push(r.str())
       const dims = r.u32()
       r.skip(8 * dims) // shape
       r.skip(4) // ggml type
-      r.skip(8) // offset
+      lastOffset = Math.max(lastOffset, r.u64())
+    }
+
+    // A download in progress has a perfectly good header and no weights.
+    // Left unchecked it appears in the library as a model, gets written into
+    // the router's preset, and fails at load time with something unhelpful —
+    // which is exactly what happened with a 1.47 GB slice of a 13 GB file.
+    // The last tensor's offset is a floor on how big the file has to be.
+    const needBytes = r.position + lastOffset
+    if (fileSize < needBytes) {
+      throw new TruncatedGgufError(fileSize, needBytes)
     }
 
     return { version, tensorCount, kv, tensorNames, fileSize }

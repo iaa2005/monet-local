@@ -175,7 +175,11 @@ export function estimate(input: EstimateInput): Estimate {
   const device = hw.devices[0]
   let deviceCeiling: number | undefined
   let deviceBytes: number | undefined
-  if (device && p['nGpuLayers'] !== 0) {
+  // `--device none` is what actually takes the GPU out of play. `-ngl 0`
+  // leaves the backend selected with nothing offloaded, which is a different
+  // (and on some models, fatal) thing — see the device flag's help.
+  const cpuOnly = p['device'] === 'none'
+  if (device && !cpuOnly) {
     deviceCeiling = device.totalBytes
     const kvOnDevice =
       p['noKvOffload'] === true ? 0 : kvBytes * DEVICE_KV_OVERHEAD

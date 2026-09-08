@@ -1,5 +1,5 @@
 import { totalmem } from 'node:os'
-import { ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
 import { estimate } from '@shared/estimator.js'
 import { buildArgs, previewCommand } from '@shared/flags/build.js'
 import type { Hardware, Profile } from '@shared/flags/types.js'
@@ -15,12 +15,51 @@ import { scanFolders } from '../models/library.js'
 import type { ModelInfo } from '../models/describe.js'
 import { listInstalled, pickDefault } from '../runtimes/manager.js'
 import { findStrays, killStray } from '../server/orphans.js'
+import { Gateway } from '../server/gateway.js'
 import { Router, type RouterEntry } from '../server/router.js'
 
 /** The router's own port. Internal — only Monet Local talks to it. */
 const ROUTER_PORT = 17172
 
 let router: Router | null = null
+let gateway: Gateway | null = null
+
+/**
+ * The library as a client sees it: every model, its status, and whether this
+ * machine could run it with the profile it is assigned. A client that knows
+ * a model will not fit can say so instead of offering it.
+ */
+function publicModels(): unknown[] {
+  const status = statusCache
+  const byId = new Map((status?.models ?? []).map((m) => [m.id, m.status]))
+  return models().map((m) => {
+    const values = profileFor(m.id).values
+    const verdict = estimate({
+      fileBytes: m.sizeBytes,
+      ...(m.geometry ? { geometry: m.geometry } : {}),
+      profile: values,
+      hardware: hardware(),
+    })
+    return {
+      id: m.id,
+      object: 'model',
+      owned_by: 'monet-local',
+      status: byId.get(m.id) ?? 'unloaded',
+      display_name: m.displayName,
+      architecture: m.architecture,
+      quantisation: m.quant,
+      size_bytes: m.sizeBytes,
+      context_max: m.contextMax ?? null,
+      context_configured: values['ctxSize'] ?? null,
+      modalities: m.mmprojPath ? ['text', 'image'] : ['text'],
+      moe: m.moe,
+      verdict: verdict.level,
+    }
+  })
+}
+
+/** Kept fresh by the router's own change events, for the SSE stream. */
+let statusCache: Awaited<ReturnType<Router['status']>> | null = null
 
 function activePack() {
   const installed = listInstalled()
@@ -51,7 +90,11 @@ function entries(): RouterEntry[] {
 
 function push(): void {
   void router?.status().then((s) => {
+    statusCache = s
     getMainWindow()?.webContents.send('server:status', s)
+    // Clients subscribed to /events find out at the same moment the UI does,
+    // so a model list in Code Monet does not need polling.
+    gateway?.broadcast('models-changed', { models: s.models })
   })
 }
 
@@ -78,14 +121,51 @@ export function registerServerIpc(): void {
       )
     }
     router ??= new Router(pack.serverPath, ROUTER_PORT)
-    router.onChange((s) => getMainWindow()?.webContents.send('server:status', s))
+    router.onChange((s) => {
+      statusCache = s
+      getMainWindow()?.webContents.send('server:status', s)
+      gateway?.broadcast('status', s)
+    })
     await router.start(entries())
-    return router.status()
+
+    const settings = readSettings()
+    gateway ??= new Gateway(settings.port, {
+      router: () => router,
+      models: () => publicModels(),
+      info: () => ({
+        name: 'Monet Local',
+        version: app.getVersion(),
+        llama_build: pack.build,
+        backend: pack.backendId,
+        capabilities: { openai: true, anthropic: true },
+        management_api: '/monet-local/v1',
+      }),
+      apiKey: () => readSettings().apiKey,
+      networkAccess: () => readSettings().networkAccess,
+    })
+    await gateway.start()
+    statusCache = await router.status()
+    return statusCache
   })
 
   ipcMain.handle('server:stop', async () => {
+    await gateway?.stop()
+    gateway = null
     await router?.stop()
-    return router?.status() ?? { state: 'stopped', port: ROUTER_PORT, models: [] }
+    statusCache = (await router?.status()) ?? null
+    return statusCache ?? { state: 'stopped', port: ROUTER_PORT, models: [] }
+  })
+
+  /** What the Integrations screen shows, and what a client is told to use. */
+  ipcMain.handle('server:endpoint', () => {
+    const s = readSettings()
+    return {
+      port: s.port,
+      networkAccess: s.networkAccess,
+      hasKey: !!s.apiKey,
+      apiKey: s.apiKey ?? null,
+      running: gateway?.running ?? false,
+    }
   })
 
   ipcMain.handle('server:load', async (_e, id: string) => {
@@ -134,6 +214,8 @@ export function registerServerIpc(): void {
 
 /** Called on quit: a router left behind holds the weights and the port. */
 export async function shutdownServer(): Promise<void> {
+  await gateway?.stop()
+  gateway = null
   await router?.stop()
   router = null
 }
