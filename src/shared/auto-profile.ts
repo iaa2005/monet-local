@@ -49,6 +49,10 @@ export interface AutoSummary {
   gpuLayers?: { on: number; of: number }
   cpuOnly: boolean
   threads: number
+  /** The physical batch — compute buffers scale with it. */
+  ubatch: number
+  /** The multimodal projector was moved off the GPU. */
+  projectorOnCpu?: boolean
   level: VerdictLevel
 }
 
@@ -119,11 +123,51 @@ function placements(cpuOnly: boolean): KvPlacement[] {
 
 /**
  * The shares of layers to try on a shared-memory GPU, in order, after the
- * first one failed. Each step is a quarter fewer than the last; the list
- * ends at the CPU, which cannot run out of device memory because it has
- * none.
+ * first one failed. Each step is a quarter fewer than the last.
  */
 const UMA_BACKOFF = [0.75, 0.6, 0.45, 0.3] as const
+
+/** The physical batch to fall to when compute buffers are what is short. */
+const UBATCH_SMALL = 64
+
+/** Below this a chat is not usable, so the context ladder stops here. */
+const CTX_FLOOR = 4096
+
+/**
+ * Which wall a failed attempt hit. The two are backed off differently: a
+ * device that is full wants fewer bytes on the GPU, a machine that is full
+ * wants fewer bytes anywhere.
+ */
+export type FailureKind = 'device' | 'ram'
+
+/**
+ * Read the server's own line and say which wall it was.
+ *
+ * The device signatures are what Vulkan and CUDA print when they refuse an
+ * allocation, plus the one that says nothing at all: an access violation on
+ * the first generated token, which on this hardware was a full GPU offload
+ * every single time it was measured. Anything else that mentions memory is
+ * the machine. A line that mentions neither is judged by where the weights
+ * were: a GPU run that died is a device problem until shown otherwise.
+ */
+export function classifyFailure(reason: string | undefined, cpuOnly: boolean): FailureKind {
+  const r = (reason ?? '').toLowerCase()
+  if (
+    /errorout|vk::|ggml_vulkan|cuda|device memory|allocation of size \d+ failed|0xc0000005|access violation/.test(r)
+  )
+    return cpuOnly ? 'ram' : 'device'
+  if (/bad_alloc|not enough memory|cannot allocate|failed to allocate|out of memory|enomem|mmap/.test(r))
+    return 'ram'
+  return cpuOnly ? 'ram' : 'device'
+}
+
+function step(current: AutoResult, profile: Profile, summary: Partial<AutoSummary>): AutoResult {
+  return {
+    profile,
+    estimate: current.estimate,
+    summary: { ...current.summary, ...summary },
+  }
+}
 
 /**
  * What to try next, after a candidate loaded and then died — or would not
@@ -132,49 +176,80 @@ const UMA_BACKOFF = [0.75, 0.6, 0.45, 0.3] as const
  * This is the half of Auto that is measured rather than estimated. Nothing
  * here predicts the device wall, because on this hardware it cannot be
  * predicted: a 13.4 GiB offload crashed where a 15.8 GiB one ran, the same
- * evening. What CAN be done is to try, watch, and back off — fewer layers
- * on the GPU each time, and finally none. The context is left alone: it was
- * chosen against RAM, and RAM is not what a device-memory failure is about.
+ * evening. What CAN be done is to try, watch, and give something up — and
+ * the order is by what each step COSTS, cheapest first, so the answer is as
+ * close to the top as the machine allows:
  *
- * Null when there is nothing left to try: the CPU-only arrangement failed
- * too, and that is not a memory problem this can walk around.
+ *   device is full   → projector to the CPU (free: a couple of seconds per
+ *                      image, no change to text) → cache to RAM → smaller
+ *                      batch → fewer layers, a quarter at a time → CPU only
+ *   machine is full  → quantise the cache → smaller batch → half the
+ *                      context, down to 4096
+ *
+ * Measured on the run that shaped this: every GPU attempt from 58 layers
+ * down to 19 failed on the same 931 MB allocation — the projector — and
+ * dropping layers never touched it. Projector first, then.
+ *
+ * Null when there is nothing left to give up.
  */
 export function backOff(
   current: AutoResult,
-  geometry: ModelGeometry | undefined,
+  input: Pick<AutoInput, 'geometry' | 'mmprojBytes'>,
+  kind: FailureKind,
 ): AutoResult | null {
   const { profile, summary } = current
-  if (summary.cpuOnly) return null
-  const blocks = geometry?.blockCount
-  const on = typeof profile['nGpuLayers'] === 'number' ? profile['nGpuLayers'] : undefined
-  // Unknown layer count, or a discrete card that had every layer: the only
-  // step down is the CPU.
-  const nextShare =
-    blocks && on !== undefined
-      ? UMA_BACKOFF.find((s) => Math.floor(blocks * s) < on)
-      : undefined
-  if (nextShare === undefined || !blocks) {
-    const cpu: Profile = { ...profile, device: 'none' }
-    delete cpu['nGpuLayers']
-    // The cache had a device to live on; it does not any more.
-    if (!summary.kv.startsWith('ram')) cpu['noKvOffload'] = true
-    return {
-      profile: cpu,
-      estimate: current.estimate,
-      summary: {
-        ...summary,
-        cpuOnly: true,
-        kv: summary.kv.endsWith('quantised') ? 'ram-quantised' : 'ram-f16',
-        gpuLayers: undefined,
-      },
+  const blocks = input.geometry?.blockCount
+
+  if (kind === 'device' && !summary.cpuOnly) {
+    if (input.mmprojBytes && !summary.projectorOnCpu) {
+      return step(current, { ...profile, noMmprojOffload: true }, { projectorOnCpu: true })
     }
+    if (!summary.kv.startsWith('ram')) {
+      const kv: KvPlacement = summary.kv.endsWith('quantised') ? 'ram-quantised' : 'ram-f16'
+      return step(current, { ...profile, noKvOffload: true }, { kv })
+    }
+    if (summary.ubatch > UBATCH_SMALL) {
+      return step(current, { ...profile, ubatchSize: UBATCH_SMALL }, { ubatch: UBATCH_SMALL })
+    }
+    const on = typeof profile['nGpuLayers'] === 'number' ? profile['nGpuLayers'] : undefined
+    const nextShare =
+      blocks && on !== undefined ? UMA_BACKOFF.find((sh) => Math.floor(blocks * sh) < on) : undefined
+    if (nextShare !== undefined && blocks) {
+      const fewer = Math.max(1, Math.floor(blocks * nextShare))
+      return step(current, { ...profile, nGpuLayers: fewer }, { gpuLayers: { on: fewer, of: blocks } })
+    }
+    const cpu: Profile = { ...profile, device: 'none', noKvOffload: true }
+    delete cpu['nGpuLayers']
+    delete cpu['noMmprojOffload']
+    return step(current, cpu, {
+      cpuOnly: true,
+      gpuLayers: undefined,
+      projectorOnCpu: undefined,
+      kv: summary.kv.endsWith('quantised') ? 'ram-quantised' : 'ram-f16',
+    })
   }
-  const fewer = Math.max(1, Math.floor(blocks * nextShare))
-  return {
-    profile: { ...profile, nGpuLayers: fewer },
-    estimate: current.estimate,
-    summary: { ...summary, gpuLayers: { on: fewer, of: blocks } },
+
+  // The machine itself is full. Fewer bytes, wherever they are.
+  if (!summary.kv.endsWith('quantised')) {
+    const kv: KvPlacement = summary.kv.startsWith('ram') ? 'ram-quantised' : 'device-quantised'
+    return step(
+      current,
+      { ...profile, cacheTypeK: 'q8_0', cacheTypeV: 'q4_0', flashAttn: 'on' },
+      { kv },
+    )
   }
+  if (summary.ubatch > UBATCH_SMALL) {
+    return step(current, { ...profile, ubatchSize: UBATCH_SMALL }, { ubatch: UBATCH_SMALL })
+  }
+  if (summary.ctxSize > CTX_FLOOR) {
+    const ctx = Math.max(CTX_FLOOR, Math.floor(summary.ctxSize / 2))
+    return step(
+      current,
+      { ...profile, ctxSize: ctx, nPredict: Math.min(Number(profile['nPredict'] ?? ctx), ctx) },
+      { ctxSize: ctx },
+    )
+  }
+  return null
 }
 
 export function recommendProfile(input: AutoInput): AutoResult {
@@ -230,6 +305,7 @@ export function recommendProfile(input: AutoInput): AutoResult {
         ...(gpuLayers ? { gpuLayers } : {}),
         cpuOnly,
         threads: base['threads'] as number,
+        ubatch: UBATCH,
         level: e.level,
       },
     }

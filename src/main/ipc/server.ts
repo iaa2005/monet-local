@@ -24,7 +24,7 @@ import { readSettings } from '../app/settings-store.js'
 import { scanFolders } from '../models/library.js'
 import type { ModelInfo } from '../models/describe.js'
 import { listInstalled, pickDefault } from '../runtimes/manager.js'
-import { findStrays, killStray } from '../server/orphans.js'
+import { findStrays, killStray, ownedRssBytes } from '../server/orphans.js'
 import { Gateway } from '../server/gateway.js'
 import { Router, type RouterEntry } from '../server/router.js'
 
@@ -68,16 +68,33 @@ function activePack() {
   return installed.find((p) => p.id === chosen) ?? pickDefault(installed)
 }
 
+/**
+ * What our own llama-servers hold right now, refreshed by hardwareNow().
+ *
+ * Kept as a number rather than asked for on every call: the process query
+ * is a PowerShell round trip, and hardware() is read from synchronous
+ * places. Stale by a few seconds at worst, and zero until the first ask.
+ */
+let ownRssBytes = 0
+
 export function hardware(): Hardware {
   return {
     totalRamBytes: totalmem(),
-    // What is free at THIS moment. The panel's verdict and Auto's pick both
-    // read it: a machine with a browser and a chat client open has less to
-    // give than its total minus a fixed reserve, and the projector failing
-    // to get 3.5 MB of device memory is what that difference looks like.
-    freeRamBytes: freemem(),
+    // What is free at THIS moment — plus what our own loaded models hold,
+    // because that is memory a reload gets back. Without the second term the
+    // verdict for the configuration that is RUNNING read "does not fit,
+    // other programs are holding 23 GB", the other program being the model.
+    // A machine with a browser and a chat client open still has less to
+    // give than its total minus a fixed reserve; that part stays.
+    freeRamBytes: freemem() + ownRssBytes,
     devices: activePack()?.devices ?? [],
   }
+}
+
+/** hardware(), with the own-server figure measured rather than remembered. */
+export async function hardwareNow(): Promise<Hardware> {
+  ownRssBytes = await ownedRssBytes(ownPids())
+  return hardware()
 }
 
 function models(): ModelInfo[] {
@@ -159,12 +176,15 @@ async function probeModel(modelId: string): Promise<void> {
 async function autoProfile(modelId: string): Promise<AutoProfileResult> {
   const model = models().find((m) => m.id === modelId)
   if (!model) throw new Error(`unknown model ${modelId}`)
+  const input = {
+    ...(model.geometry ? { geometry: model.geometry } : {}),
+    ...(model.mmprojPath ? { mmprojBytes: mmprojBytes(model) } : {}),
+  }
   const first: AutoResult = recommendProfile({
     fileBytes: model.sizeBytes,
-    ...(model.geometry ? { geometry: model.geometry } : {}),
+    ...input,
     ...(model.contextMax ? { contextMax: model.contextMax } : {}),
-    ...(model.mmprojPath ? { mmprojBytes: mmprojBytes(model) } : {}),
-    hardware: hardware(),
+    hardware: await hardwareNow(),
     cpuThreads: cpus().length,
   })
   const target = autoTarget(modelId, first.profile)
@@ -183,7 +203,7 @@ async function autoProfile(modelId: string): Promise<AutoProfileResult> {
   }
 
   if (!router) await startServer()
-  const { result, attempts } = await autoTune(modelId, first, model.geometry, {
+  const { result, attempts } = await autoTune(modelId, first, input, {
     router: () => router!,
     write: (p) => void setProfileValues(target.profileId, p),
     entries,
@@ -354,7 +374,7 @@ export function registerServerIpc(): void {
    */
   ipcMain.handle(
     'server:estimate',
-    (_e, modelId: string, values: Profile) => {
+    async (_e, modelId: string, values: Profile) => {
       const model = models().find((m) => m.id === modelId)
       if (!model) throw new Error(`unknown model ${modelId}`)
       const pack = activePack()
@@ -364,7 +384,7 @@ export function registerServerIpc(): void {
           ...(model.geometry ? { geometry: model.geometry } : {}),
           ...(model.mmprojPath ? { mmprojBytes: mmprojBytes(model) } : {}),
           profile: values,
-          hardware: hardware(),
+          hardware: await hardwareNow(),
         }),
         command: previewCommand(
           pack?.serverPath ?? 'llama-server',

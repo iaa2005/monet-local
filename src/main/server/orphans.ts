@@ -95,6 +95,28 @@ async function llamaServers(): Promise<ProcRow[]> {
 }
 
 /**
+ * Resident memory held by OUR llama-servers — the router and every model it
+ * has loaded.
+ *
+ * Free RAM is measured to decide what fits, and a model that is already
+ * loaded is the largest thing in that measurement. Counted as "in use" it
+ * makes the verdict for the very configuration that is running read
+ * "does not fit, other programs are holding 23 GB" — the other program being
+ * the model itself. This is the number to add back.
+ */
+export async function ownedRssBytes(ours: number[]): Promise<number> {
+  try {
+    const rows = await llamaServers()
+    const strays = new Set(strayPids(rows, ours).map((s) => s.pid))
+    return rows
+      .filter((r) => !strays.has(r.pid))
+      .reduce((sum, r) => sum + (r.rssBytes ?? 0), 0)
+  } catch {
+    return 0
+  }
+}
+
+/**
  * @param ours every process id this app is responsible for — itself, and the
  * router it spawned. Their descendants are worked out from the tree.
  */

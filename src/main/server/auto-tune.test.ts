@@ -5,6 +5,9 @@ import type { ModelGeometry } from '@shared/models/geometry.js'
 import { autoTune, type AutoProgress } from './auto-tune.js'
 import type { Router } from './router.js'
 
+/** What autoTune is told about the model. No projector in this fixture. */
+const INPUT = { geometry: undefined as ModelGeometry | undefined }
+
 /**
  * The loop, against a router that behaves the way this machine did: a
  * candidate with too many layers on the GPU loads fine and then dies on its
@@ -20,6 +23,7 @@ const MACHINE: Hardware = {
   ],
 }
 const QWEN: ModelGeometry = { blockCount: 65, kvHeads: 4, keyLength: 256, valueLength: 256, fullAttentionInterval: 4 }
+INPUT.geometry = QWEN
 
 function first() {
   return recommendProfile({
@@ -61,7 +65,7 @@ describe('autoTune — try, watch, back off', () => {
   it('writes before it starts, starts before it loads, loads before it asks', async () => {
     const { router, probe, log } = fakeRouter(Infinity)
     const written: unknown[] = []
-    const r = await autoTune('m', first(), QWEN, {
+    const r = await autoTune('m', first(), INPUT, {
       router: () => router,
       write: (p) => void written.push(p),
       entries: () => [{ id: 'm', profile: written[written.length - 1] as never, modelPath: 'x' }],
@@ -78,18 +82,30 @@ describe('autoTune — try, watch, back off', () => {
     const { router, probe, log } = fakeRouter(50)
     const progress: AutoProgress[] = []
     let current: Record<string, unknown> = {}
-    const r = await autoTune('m', first(), QWEN, {
+    const r = await autoTune('m', first(), INPUT, {
       router: () => router,
       write: (p) => void (current = p),
       entries: () => [{ id: 'm', profile: current as never, modelPath: 'x' }],
       probe,
       onProgress: (p) => void progress.push(p),
     })
-    expect(r.attempts.map((a) => [a.summary.gpuLayers?.on, a.ok])).toEqual([[58, false], [48, true]])
+    // No projector to move and the cache already in RAM, so the first thing
+    // given up is the batch — cheap — and only then a quarter of the layers.
+    expect(r.attempts.map((a) => [a.summary.gpuLayers?.on, a.summary.ubatch, a.ok])).toEqual([
+      [58, 256, false],
+      [58, 64, false],
+      [48, 64, true],
+    ])
     expect(r.attempts[0]?.reason).toBe('access violation (0xC0000005)')
-    expect(log).toEqual(['start ngl=58 dev=gpu', 'load', 'probe', 'start ngl=48 dev=gpu', 'load', 'probe'])
+    expect(log).toEqual([
+      'start ngl=58 dev=gpu', 'load', 'probe',
+      'start ngl=58 dev=gpu', 'load', 'probe',
+      'start ngl=48 dev=gpu', 'load', 'probe',
+    ])
     expect(progress.map((p) => `${p.attempt}:${p.phase}`)).toEqual([
-      '1:loading', '1:probing', '1:failed', '2:loading', '2:probing', '2:ok',
+      '1:loading', '1:probing', '1:failed',
+      '2:loading', '2:probing', '2:failed',
+      '3:loading', '3:probing', '3:ok',
     ])
     // The configuration left behind is the one that ran.
     expect(current['nGpuLayers']).toBe(48)
@@ -98,39 +114,43 @@ describe('autoTune — try, watch, back off', () => {
   it('a refused load is a failed attempt too, with the server’s own reason', async () => {
     const { router, probe } = fakeRouter(Infinity, 50)
     let current: Record<string, unknown> = {}
-    const r = await autoTune('m', first(), QWEN, {
+    const r = await autoTune('m', first(), INPUT, {
       router: () => router,
       write: (p) => void (current = p),
       entries: () => [{ id: 'm', profile: current as never, modelPath: 'x' }],
       probe,
     })
     expect(r.attempts[0]).toMatchObject({ ok: false, reason: 'ErrorOutOfDeviceMemory' })
-    expect(r.attempts[1]?.ok).toBe(true)
+    expect(r.attempts.some((a) => a.ok)).toBe(true)
   })
 
   it('goes all the way down to the CPU, and says when even that failed', async () => {
     const { router, probe, log } = fakeRouter(-1)
     const progress: AutoProgress[] = []
     let current: Record<string, unknown> = {}
-    const r = await autoTune('m', first(), QWEN, {
+    const r = await autoTune('m', first(), INPUT, {
       router: () => router,
       write: (p) => void (current = p),
       entries: () => [{ id: 'm', profile: current as never, modelPath: 'x' }],
       probe,
       onProgress: (p) => void progress.push(p),
     })
-    expect(r.attempts.map((a) => (a.summary.cpuOnly ? 'cpu' : a.summary.gpuLayers?.on))).toEqual([
-      58, 48, 39, 29, 19, 'cpu',
-    ])
+    const shape = r.attempts.map((a) =>
+      a.summary.cpuOnly ? `cpu@${a.summary.ctxSize / 1024}K` : `${a.summary.gpuLayers?.on}`,
+    )
+    // Batch, then layers, then the CPU — and once on the CPU a failure is
+    // the machine's, so the context starts coming down.
+    expect(shape.slice(0, 7)).toEqual(['58', '58', '48', '39', '29', '19', 'cpu@256K'])
+    expect(shape[7]).toBe('cpu@128K')
     expect(r.attempts.every((a) => !a.ok)).toBe(true)
-    expect(log[log.length - 3]).toBe('start ngl=all dev=none')
+    expect(log).toContain('start ngl=all dev=none')
     expect(progress[progress.length - 1]?.phase).toBe('gave-up')
   })
 
   it('stops at the attempt limit rather than trying every rung', async () => {
     const { router, probe } = fakeRouter(-1)
     let current: Record<string, unknown> = {}
-    const r = await autoTune('m', first(), QWEN, {
+    const r = await autoTune('m', first(), INPUT, {
       router: () => router,
       write: (p) => void (current = p),
       entries: () => [{ id: 'm', profile: current as never, modelPath: 'x' }],

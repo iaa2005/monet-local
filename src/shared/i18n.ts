@@ -140,6 +140,8 @@ export const en = {
   'server.autoLayers': 'layers on the GPU',
   'server.autoCpu': 'CPU only',
   'server.autoThreads': 'threads',
+  'server.autoProjector': 'projector on the CPU',
+  'server.autoUbatch': 'batch',
   'server.autoWontFit':
     'Nothing fits this machine comfortably; this is the smallest arrangement, and the verdict below says why.',
   'server.autoPhase.loading': 'loading',
@@ -415,6 +417,8 @@ export const ru: Record<StringKey, string> = {
   'server.autoLayers': 'слоёв на видеокарте',
   'server.autoCpu': 'только CPU',
   'server.autoThreads': 'потоков',
+  'server.autoProjector': 'проектор на CPU',
+  'server.autoUbatch': 'пакет',
   'server.autoWontFit':
     'На этой машине ничего не помещается свободно; это самый скромный вариант, а вердикт ниже говорит почему.',
   'server.autoPhase.loading': 'загрузка',

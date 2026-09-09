@@ -18,9 +18,14 @@
  * for them, for the same reason.
  */
 
-import { backOff, type AutoResult, type AutoSummary } from '@shared/auto-profile.js'
+import {
+  backOff,
+  classifyFailure,
+  type AutoInput,
+  type AutoResult,
+  type AutoSummary,
+} from '@shared/auto-profile.js'
 import type { Profile } from '@shared/flags/types.js'
-import type { ModelGeometry } from '@shared/models/geometry.js'
 import type { Router } from './router.js'
 
 export interface AutoAttempt {
@@ -52,7 +57,12 @@ export interface AutoTuneDeps {
   maxAttempts?: number
 }
 
-const MAX_ATTEMPTS = 6
+/**
+ * The ladder is eight deep at most on a GPU machine with a projector
+ * (projector, cache, batch, four layer steps, CPU) before the context starts
+ * coming down. Each attempt is a model load, so this is minutes, not hours.
+ */
+const MAX_ATTEMPTS = 10
 
 /** Loads a model with a candidate and asks it to speak; the verdict is a token. */
 async function tryCandidate(
@@ -81,7 +91,7 @@ async function tryCandidate(
 export async function autoTune(
   modelId: string,
   first: AutoResult,
-  geometry: ModelGeometry | undefined,
+  input: Pick<AutoInput, 'geometry' | 'mmprojBytes'>,
   deps: AutoTuneDeps,
 ): Promise<{ result: AutoResult; attempts: AutoAttempt[] }> {
   const attempts: AutoAttempt[] = []
@@ -113,7 +123,8 @@ export async function autoTune(
     }
     attempts.push({ summary: candidate.summary, ok: false, reason: failure })
     report('failed', failure)
-    candidate = backOff(candidate, geometry)
+    // Which wall it hit decides what is given up next — see backOff.
+    candidate = backOff(candidate, input, classifyFailure(failure, candidate.summary.cpuOnly))
   }
   // Every arrangement failed, down to the CPU. The last one written stays
   // written — it is the most conservative thing tried, and the note says

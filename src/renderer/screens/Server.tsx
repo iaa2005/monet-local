@@ -687,9 +687,19 @@ function count(n: number): string {
  */
 /** "58/65 layers on the GPU" or "CPU only" — the part that changes between attempts. */
 function attemptLabel(s: AutoProfileResult['summary'], t: ReturnType<typeof useT>): string {
-  if (s.cpuOnly) return t('server.autoCpu')
-  if (s.gpuLayers) return `${s.gpuLayers.on}/${s.gpuLayers.of} ${t('server.autoLayers')}`
-  return t(`server.autoKv.${s.kv}` as StringKey)
+  const ctx = `${s.ctxSize >= 1024 ? `${s.ctxSize / 1024}K` : s.ctxSize}`
+  const parts = [
+    s.cpuOnly
+      ? t('server.autoCpu')
+      : s.gpuLayers
+        ? `${s.gpuLayers.on}/${s.gpuLayers.of} ${t('server.autoLayers')}`
+        : null,
+    s.projectorOnCpu ? t('server.autoProjector') : null,
+    t(`server.autoKv.${s.kv}` as StringKey),
+    `${ctx} ${t('server.autoCtx')}`,
+    s.ubatch !== 256 ? `${t('server.autoUbatch')} ${s.ubatch}` : null,
+  ].filter(Boolean)
+  return parts.join(' · ')
 }
 
 /** The attempt in flight, as main narrates it. */
@@ -731,6 +741,8 @@ function AutoNote({
       : s.gpuLayers
         ? `${s.gpuLayers.on}/${s.gpuLayers.of} ${t('server.autoLayers')}`
         : null,
+    s.projectorOnCpu ? t('server.autoProjector') : null,
+    s.ubatch !== 256 ? `${t('server.autoUbatch')} ${s.ubatch}` : null,
     `${s.threads} ${t('server.autoThreads')}`,
   ].filter(Boolean)
   const tone = s.level === 'fits' ? 'ok' : s.level === 'tight' ? 'warn' : 'bad'

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { backOff, recommendProfile, type AutoInput } from './auto-profile.js'
+import { backOff, classifyFailure, recommendProfile, type AutoInput } from './auto-profile.js'
 import { estimate } from './estimator.js'
 import type { Hardware } from './flags/types.js'
 import type { ModelGeometry } from './models/geometry.js'
@@ -140,39 +140,80 @@ describe('what auto picks on the machine it was calibrated on', () => {
     expect(busy.summary.level).not.toBe('wont_fit')
   })
 
-  it('backs off a quarter of the layers at a time, then to the CPU, then gives up', () => {
-    // Measured rather than predicted: the device wall on this hardware
-    // moved between 13.4 and 15.8 GiB the same evening, so Auto tries,
-    // watches, and steps down.
-    let r = recommendProfile(on({ fileBytes: IQ4_XS }))
-    const seen: (number | 'cpu')[] = []
-    for (let i = 0; i < 10; i++) {
-      seen.push(r.summary.cpuOnly ? 'cpu' : r.summary.gpuLayers!.on)
-      const next = backOff(r, QWEN)
+  it('on a full device: projector, cache, batch, layers, then the CPU', () => {
+    // The run that shaped this order: every GPU attempt from 58 layers down
+    // to 19 failed on the same 931 MB allocation, the projector, which no
+    // number of dropped layers ever touched. So the cheapest thing goes
+    // first — the projector costs nothing on the CPU but seconds per image.
+    let r = recommendProfile(on({ fileBytes: IQ4_XS, mmprojBytes: 931_145_856 }))
+    const seen: string[] = []
+    const label = (x: typeof r): string =>
+      x.summary.cpuOnly
+        ? 'cpu'
+        : `${x.summary.gpuLayers!.on}${x.summary.projectorOnCpu ? '+proj' : ''}${x.summary.kv.startsWith('ram') ? '+ram' : ''}${x.summary.ubatch < 256 ? '+ub64' : ''}`
+    for (let i = 0; i < 12 && !r.summary.cpuOnly; i++) {
+      seen.push(label(r))
+      const next = backOff(r, { geometry: QWEN, mmprojBytes: 931_145_856 }, 'device')
       if (!next) break
       r = next
     }
-    expect(seen).toEqual([58, 48, 39, 29, 19, 'cpu'])
-    expect(backOff(r, QWEN)).toBeNull()
+    seen.push(label(r))
+    // The starting pick already had the cache in RAM at this size, so that
+    // step is skipped: nothing is "given up" twice.
+    expect(seen).toEqual([
+      '58+ram', '58+proj+ram', '58+proj+ram+ub64', '48+proj+ram+ub64', '39+proj+ram+ub64',
+      '29+proj+ram+ub64', '19+proj+ram+ub64', 'cpu',
+    ])
+    // With no device left, a failure is the machine's, and the machine's
+    // ladder takes over: the context comes down. That is the other wall the
+    // user named — RAM, for a model that is simply too big.
+    const ctxBefore = r.summary.ctxSize
+    const next = backOff(r, { geometry: QWEN, mmprojBytes: 931_145_856 }, classifyFailure('exit code 1', true))
+    expect(next?.summary.ctxSize).toBe(ctxBefore / 2)
   })
 
-  it('moves the cache to RAM when it falls back to the CPU', () => {
-    // A cache "on the device" with --device none is a contradiction llama.cpp
-    // resolves by ignoring it; say what will actually happen instead.
-    const first = recommendProfile(on({ fileBytes: IQ4_XS, contextMax: 8192 }))
-    let r = first
+  it('on a full machine: quantise the cache, then the batch, then halve the context', () => {
+    let r = recommendProfile(on({ contextMax: 65536, hardware: { totalRamBytes: MACHINE.totalRamBytes, devices: [] } }))
+    const seen: string[] = []
+    for (let i = 0; i < 12; i++) {
+      seen.push(`${r.summary.ctxSize / 1024}K ${r.summary.kv} ub${r.summary.ubatch}`)
+      const next = backOff(r, { geometry: QWEN }, 'ram')
+      if (!next) break
+      r = next
+    }
+    // The floor is 4096 — below that a chat is not usable — and then nothing.
+    expect(seen[seen.length - 1]).toBe('4K ram-quantised ub64')
+    expect(seen.some((x) => x.includes('ram-f16'))).toBe(seen[0]!.includes('ram-f16'))
+    expect(backOff(r, { geometry: QWEN }, 'ram')).toBeNull()
+  })
+
+  it('a device failure on a CPU-only run is a RAM failure — there is no device', () => {
+    expect(classifyFailure('ggml_vulkan: Memory allocation of size 3538944 failed', true)).toBe('ram')
+    expect(classifyFailure('ggml_vulkan: Memory allocation of size 3538944 failed', false)).toBe('device')
+  })
+
+  it('reads the wall off the server line', () => {
+    expect(classifyFailure('vk::Device::allocateMemory: ErrorOutOfDeviceMemory', false)).toBe('device')
+    expect(classifyFailure('access violation (0xC0000005)', false)).toBe('device')
+    expect(classifyFailure('std::bad_alloc', false)).toBe('ram')
+    expect(classifyFailure('failed to allocate buffer of size 3221225472', false)).toBe('ram')
+    // Nothing recognisable: judged by where the weights were.
+    expect(classifyFailure('exit code 1', false)).toBe('device')
+    expect(classifyFailure('exit code 1', true)).toBe('ram')
+  })
+
+  it('moves the cache to RAM and the projector back when it falls to the CPU', () => {
+    let r = recommendProfile(on({ fileBytes: IQ4_XS, contextMax: 8192, mmprojBytes: 1 }))
     for (;;) {
-      const next = backOff(r, QWEN)
+      const next = backOff(r, { geometry: QWEN, mmprojBytes: 1 }, 'device')
       if (!next) break
       r = next
     }
     expect(r.profile['device']).toBe('none')
     expect(r.profile['nGpuLayers']).toBeUndefined()
+    expect(r.profile['noMmprojOffload']).toBeUndefined()
     expect(r.profile['noKvOffload']).toBe(true)
     expect(r.summary.kv.startsWith('ram')).toBe(true)
-    // And the context it was chosen with is untouched: RAM is not what a
-    // device failure is about.
-    expect(r.profile['ctxSize']).toBe(first.profile['ctxSize'])
   })
 
   it('does not set a reasoning effort — the client asks per request now', () => {
