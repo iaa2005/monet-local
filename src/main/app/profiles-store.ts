@@ -171,6 +171,25 @@ export function assignProfile(modelId: string, profileId: string): ProfilesFile 
   })
 }
 
+/**
+ * Is this model's configuration its own to rewrite?
+ *
+ * Only when it was assigned to this model by name and no other model is on
+ * it. The default is never "own", even with one model in the library: it is
+ * the configuration every model falls back to, and a second model added
+ * tomorrow would inherit whatever was written into it today. Auto uses this
+ * to decide between editing in place and making a new configuration.
+ */
+export function ownsProfile(modelId: string, allModelIds: string[]): boolean {
+  const f = readProfiles()
+  const assigned = f.assignments[modelId]
+  if (!assigned) return false
+  const others = allModelIds.filter(
+    (id) => id !== modelId && (f.assignments[id] ?? f.defaultProfileId) === assigned,
+  )
+  return others.length === 0
+}
+
 export function profileFor(modelId: string): NamedProfile {
   const f = readProfiles()
   const id = f.assignments[modelId] ?? f.defaultProfileId

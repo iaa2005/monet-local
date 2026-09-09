@@ -11,6 +11,7 @@ const {
   SEED,
   assignProfile,
   createProfile,
+  ownsProfile,
   profileFor,
   removeProfile,
   renameProfile,
@@ -124,5 +125,35 @@ describe('assignProfile', () => {
 
     expect(profileFor('qwen-q4').values['ctxSize']).toBe(131072)
     expect(profileFor('qwen-q6').values['ctxSize']).toBe(8192)
+  })
+})
+
+
+describe('ownsProfile — whether Auto may edit in place', () => {
+  it('never treats the default as a model\u2019s own, even alone in the library', () => {
+    // A second model added tomorrow inherits whatever was written into the
+    // default today, so it must be copied, not edited.
+    expect(ownsProfile('only', ['only'])).toBe(false)
+  })
+
+  it('is own when assigned by name and nobody else is on it', () => {
+    const { id } = createProfile('Mine', { ctxSize: 4096 })
+    assignProfile('a', id)
+    expect(ownsProfile('a', ['a', 'b'])).toBe(true)
+  })
+
+  it('is shared the moment a second model is assigned to it', () => {
+    const { id } = createProfile('Both', {})
+    assignProfile('a', id)
+    assignProfile('b', id)
+    expect(ownsProfile('a', ['a', 'b'])).toBe(false)
+  })
+
+  it('is shared when another model falls back to it as the default', () => {
+    const { id } = createProfile('Made default', {})
+    assignProfile('a', id)
+    writeProfiles({ ...assignProfile('a', id), defaultProfileId: id })
+    // b has no assignment and so lands on the same profile.
+    expect(ownsProfile('a', ['a', 'b'])).toBe(false)
   })
 })

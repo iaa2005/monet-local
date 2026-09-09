@@ -7,6 +7,7 @@ import { bytes } from '@shared/format.js'
 import { Button } from '@/components/ui/button'
 import { Badge, Card, ClickRow, Empty, Page, PageHeader, Section, Stat } from '@/components/ui/page'
 import { ProfilePanel } from '@/components/ProfilePanel'
+import { MenuButton } from '@/components/ui/menu'
 import { Select } from '@/components/ui/select'
 import { Verdict } from '@/components/Verdict'
 import { api } from '@/lib/api'
@@ -15,6 +16,7 @@ import { cn } from '@/lib/utils'
 import { useT } from '@/stores/uiStore'
 import type {
   Activity,
+  AutoProfileResult,
   EndpointInfo,
   ModelInfo,
   ProfilesFile,
@@ -44,6 +46,10 @@ export function Server(): JSX.Element {
   const [command, setCommand] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /** What the last Auto decided, shown until the next one or a dismissal. */
+  const [autoNote, setAutoNote] = useState<AutoProfileResult | null>(null)
+  /** The model Auto is working on, so its row can say so. */
+  const [autoBusy, setAutoBusy] = useState<string | null>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState('')
@@ -171,6 +177,40 @@ export function Server(): JSX.Element {
     const name = draftName.trim()
     if (!profileId || !name || name === profile?.name) return
     await reload(await api()?.profiles.rename(profileId, name))
+  }
+
+  /**
+   * Pick the settings for a model and load it with them.
+   *
+   * Three steps that look like one: write the configuration (a new one if
+   * this model shares its current one, the existing one if it is its own —
+   * decided in main, by the same count the panel shows), restart the router
+   * so llama.cpp reads the new preset (it reads it once, at startup), then
+   * load. A model that was already loaded comes back through the restart
+   * with the new settings and is not loaded twice.
+   */
+  const autoLoad = async (modelId: string): Promise<void> => {
+    setAutoBusy(modelId)
+    try {
+      await guard(async () => {
+        const r = await api()!.profiles.auto(modelId)
+        setAutoNote(r)
+        setProfiles(r.file)
+        // The panel reloads its values only when the model:profile key
+        // changes. An edit in place keeps the key, so force it.
+        loadedFor.current = null
+        setSelected(modelId)
+        if (status?.state === 'ready') await api()!.server.apply()
+        else await api()!.server.start()
+        const now = await api()!.server.status()
+        const isLoaded = now.models.some(
+          (m) => m.id === modelId && m.status === 'loaded',
+        )
+        if (!isLoaded) await api()!.server.load(modelId)
+      })
+    } finally {
+      setAutoBusy(null)
+    }
   }
 
   const guard = async (fn: () => Promise<unknown>): Promise<void> => {
@@ -397,34 +437,63 @@ export function Server(): JSX.Element {
                   </Badge>
                 ) : null}
                 <div className="flex-1" />
-                {running ? (
-                  <Button
-                    size="sm"
-                    variant={loaded.has(m.id) ? 'outline' : 'brand'}
+                {/* Load, and beside it the other way to load: Auto, which
+                    picks the settings first. Its own control rather than a
+                    second button, because "load with what is configured"
+                    and "configure, then load" are one verb with a
+                    qualifier, and a row of two full buttons read as two
+                    unrelated actions. */}
+                <div className="flex items-center gap-1">
+                  {running ? (
+                    <Button
+                      size="sm"
+                      variant={loaded.has(m.id) ? 'outline' : 'brand'}
+                      disabled={busy || loading.has(m.id)}
+                      onClick={(e) => {
+                        // The row selects; the button loads. One click must
+                        // not do both, or unloading would also switch the
+                        // profile.
+                        e.stopPropagation()
+                        void guard(() =>
+                          loaded.has(m.id)
+                            ? api()!.server.unload(m.id)
+                            : api()!.server.load(m.id),
+                        )
+                      }}
+                    >
+                      {autoBusy === m.id
+                        ? t('server.autoWorking')
+                        : loading.has(m.id)
+                          ? t('common.loading')
+                          : loaded.has(m.id)
+                            ? t('server.unload')
+                            : t('server.load')}
+                    </Button>
+                  ) : null}
+                  <MenuButton
+                    title={t('server.more')}
                     disabled={busy || loading.has(m.id)}
-                    onClick={(e) => {
-                      // The row selects; the button loads. One click must not
-                      // do both, or unloading would also switch the profile.
-                      e.stopPropagation()
-                      void guard(() =>
-                        loaded.has(m.id)
-                          ? api()!.server.unload(m.id)
-                          : api()!.server.load(m.id),
-                      )
-                    }}
-                  >
-                    {loading.has(m.id)
-                      ? t('common.loading')
-                      : loaded.has(m.id)
-                        ? t('server.unload')
-                        : t('server.load')}
-                  </Button>
-                ) : null}
+                    items={[
+                      {
+                        id: 'auto',
+                        label: loaded.has(m.id)
+                          ? t('server.autoReload')
+                          : t('server.auto'),
+                        hint: t('server.autoHint'),
+                        onSelect: () => void autoLoad(m.id),
+                      },
+                    ]}
+                  />
+                </div>
               </ClickRow>
             ))}
           </Card>
         )}
       </Section>
+
+      {autoNote ? (
+        <AutoNote r={autoNote} onClose={() => setAutoNote(null)} />
+      ) : null}
 
       {selected && estimate ? (
         <Section title={t('server.profile')}>
@@ -599,6 +668,65 @@ export function Server(): JSX.Element {
 /** A live count, grouped so four digits do not read as one number. */
 function count(n: number): string {
   return n.toLocaleString('en-US')
+}
+
+/**
+ * What Auto decided, in one line a person can check against the panel.
+ *
+ * Every number here is one the panel below now shows; the line exists so
+ * the decision is read as a sentence before it is read as a form. The
+ * verdict colour is the estimator's, and a refusal is said here rather than
+ * left to be discovered when the server will not start.
+ */
+function AutoNote({
+  r,
+  onClose,
+}: {
+  r: AutoProfileResult
+  onClose: () => void
+}): JSX.Element {
+  const t = useT()
+  const s = r.summary
+  const profile = r.file.profiles.find((p) => p.id === r.profileId)
+  const parts = [
+    `${s.ctxSize >= 1024 ? `${s.ctxSize / 1024}K` : s.ctxSize} ${t('server.autoCtx')}`,
+    t(`server.autoKv.${s.kv}` as StringKey),
+    s.cpuOnly
+      ? t('server.autoCpu')
+      : s.gpuLayers
+        ? `${s.gpuLayers.on}/${s.gpuLayers.of} ${t('server.autoLayers')}`
+        : null,
+    `${s.threads} ${t('server.autoThreads')}`,
+  ].filter(Boolean)
+  const tone = s.level === 'fits' ? 'ok' : s.level === 'tight' ? 'warn' : 'bad'
+  return (
+    <div
+      className={cn(
+        'mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-3 py-2 text-sm',
+        tone === 'ok' && 'border-green-text/30 bg-green-bg',
+        tone === 'warn' && 'border-warn/40 bg-warn/10',
+        tone === 'bad' && 'border-red-text/30 bg-red-bg text-red-text',
+      )}
+    >
+      <Badge tone={r.created ? 'brand' : undefined}>
+        {r.created ? t('server.autoCreated') : t('server.autoEdited')}
+      </Badge>
+      <span className="font-medium">{profile?.name}</span>
+      <span className="text-muted-foreground">{parts.join(' \u00b7 ')}</span>
+      {s.level === 'wont_fit' ? (
+        <span className="basis-full text-xs">{t('server.autoWontFit')}</span>
+      ) : null}
+      <div className="flex-1" />
+      <button
+        type="button"
+        onClick={onClose}
+        className="text-xs text-muted-foreground hover:text-foreground"
+        aria-label="dismiss"
+      >
+        \u00d7
+      </button>
+    </div>
+  )
 }
 
 /**

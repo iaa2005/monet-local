@@ -1,5 +1,7 @@
-import { totalmem } from 'node:os'
+import { statSync } from 'node:fs'
+import { cpus, totalmem } from 'node:os'
 import { app, ipcMain } from 'electron'
+import { recommendProfile, type AutoSummary } from '@shared/auto-profile.js'
 import { estimate } from '@shared/estimator.js'
 import { publicModels } from '@shared/public-models.js'
 import { buildArgs, previewCommand } from '@shared/flags/build.js'
@@ -8,6 +10,7 @@ import { getMainWindow } from '../app/main-window.js'
 import {
   assignProfile,
   createProfile,
+  ownsProfile,
   profileFor,
   readProfiles,
   removeProfile,
@@ -73,6 +76,66 @@ export function hardware(): Hardware {
 
 function models(): ModelInfo[] {
   return scanFolders(readSettings().modelFolders.map((f) => f.path)).models
+}
+
+/** The projector's size on disk — it is loaded beside the model and costs
+ * its own memory, so a budget that forgets it is most of a gigabyte out. */
+function mmprojBytes(m: ModelInfo): number {
+  if (!m.mmprojPath) return 0
+  try {
+    return statSync(m.mmprojPath).size
+  } catch {
+    return 0
+  }
+}
+
+export interface AutoProfileResult {
+  file: ProfilesFile
+  profileId: string
+  /** True when a configuration was made for this model; false when its own
+   * existing one was edited in place. */
+  created: boolean
+  summary: AutoSummary
+}
+
+/**
+ * Pick a model's settings, and put them where the user's rule says.
+ *
+ * The rule: a configuration shared by several models is not this model's
+ * to rewrite — editing it would move every model on it — so one is created
+ * for it and assigned. A configuration only this model uses IS its own, and
+ * is edited in place rather than multiplied. The count the screen shows
+ * beside a shared profile is the same count this decides by.
+ */
+function autoProfile(modelId: string): AutoProfileResult {
+  const model = models().find((m) => m.id === modelId)
+  if (!model) throw new Error(`unknown model ${modelId}`)
+  const { profile, summary } = recommendProfile({
+    fileBytes: model.sizeBytes,
+    ...(model.geometry ? { geometry: model.geometry } : {}),
+    ...(model.contextMax ? { contextMax: model.contextMax } : {}),
+    ...(model.mmprojPath ? { mmprojBytes: mmprojBytes(model) } : {}),
+    hardware: hardware(),
+    cpuThreads: cpus().length,
+  })
+
+  const current = profileFor(modelId)
+  if (ownsProfile(modelId, models().map((m) => m.id))) {
+    return {
+      file: setProfileValues(current.id, profile),
+      profileId: current.id,
+      created: false,
+      summary,
+    }
+  }
+  const name = `Auto · ${model.displayName} ${model.quant}`.trim()
+  const made = createProfile(name, profile)
+  return {
+    file: assignProfile(modelId, made.id),
+    profileId: made.id,
+    created: true,
+    summary,
+  }
 }
 
 /** Every model in the library becomes an INI section; none is auto-loaded. */
@@ -230,7 +293,7 @@ export function registerServerIpc(): void {
         estimate: estimate({
           fileBytes: model.sizeBytes,
           ...(model.geometry ? { geometry: model.geometry } : {}),
-          ...(model.mmprojPath ? { mmprojBytes: 0 } : {}),
+          ...(model.mmprojPath ? { mmprojBytes: mmprojBytes(model) } : {}),
           profile: values,
           hardware: hardware(),
         }),
@@ -265,6 +328,7 @@ export function registerServerIpc(): void {
   })
 
   ipcMain.handle('profiles:get', () => readProfiles())
+  ipcMain.handle('profiles:auto', (_e, modelId: string) => autoProfile(modelId))
   ipcMain.handle('profiles:create', (_e, name: string, values?: Profile) =>
     createProfile(name, values ?? {}),
   )

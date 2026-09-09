@@ -8,6 +8,7 @@ import type { ModelInfo } from '@main/models/describe.js'
 import type { Estimate } from '@shared/estimator.js'
 import type { Hardware, Profile } from '@shared/flags/types.js'
 import type { ProfilesFile } from '@main/app/profiles-store.js'
+import type { AutoProfileResult } from '@main/ipc/server.js'
 import type { Activity, RouterStatus } from '@main/server/router.js'
 import type { StrayProcess } from '@main/server/orphans.js'
 import type { StoredRun } from '@main/bench/run.js'
@@ -82,6 +83,7 @@ export type DownloadEvent = DownloadProgress & { path: string }
 
 export type {
   AppSettings,
+  AutoProfileResult,
   Device,
   DownloadResult,
   HfFile,
@@ -240,6 +242,10 @@ const api = {
       ipcRenderer.invoke('profiles:setValues', id, values),
     assign: (modelId: string, profileId: string): Promise<ProfilesFile> =>
       ipcRenderer.invoke('profiles:assign', modelId, profileId),
+    /** Pick a model's settings and write them into its own configuration —
+     * a new one if it shares one, the existing one if it is its own. */
+    auto: (modelId: string): Promise<AutoProfileResult> =>
+      ipcRenderer.invoke('profiles:auto', modelId),
   },
 
   prefs: {
