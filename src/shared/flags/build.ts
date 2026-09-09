@@ -36,12 +36,43 @@ function isSet(v: unknown): boolean {
  * the profile, and everything in the profile is on the command line.
  */
 export function withDefaults(profile: Profile): Profile {
-  const out: Profile = { ...profile }
+  const out: Profile = { ...onlyCpu(profile) }
   for (const [id, def] of Object.entries(FLAGS)) {
     if (out[id] === undefined && 'default' in def && def.default !== undefined) {
       out[id] = def.default as FlagValue
     }
   }
+  return out
+}
+
+/**
+ * Whether this profile means "compute on the processor".
+ *
+ * Two settings say it and only one of them works. `--device none` takes the
+ * backend out of the picture; `--n-gpu-layers 0` selects the backend and then
+ * offloads nothing to it, which is a different thing and, on some models, a
+ * fatal one — Qwen3.8-27B Q4_K_M dies at context creation with 0xC0000409 and
+ * not a word of explanation, while the same model with `--device none` loads
+ * in twenty seconds. The registry's help for both flags says so; this is
+ * where the app stops relying on the user having read it.
+ */
+export function isCpuOnly(p: Profile): boolean {
+  return p['device'] === 'none' || p['nGpuLayers'] === 0
+}
+
+/**
+ * Zero layers, rewritten into the flag that means it.
+ *
+ * A silent rewrite needs justifying, and the justification is that there is
+ * no second reading of "put zero layers on the GPU" — including when a
+ * device is named beside it, since zero layers on that device is the same
+ * sentence. The preview shows the result, so what launches is still what the
+ * user is looking at.
+ */
+export function onlyCpu(p: Profile): Profile {
+  if (p['nGpuLayers'] !== 0) return p
+  const out: Profile = { ...p, device: 'none' }
+  delete out['nGpuLayers']
   return out
 }
 

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { buildArgs, buildIniSection, previewCommand, splitArgs } from './build.js'
+import {
+  buildArgs,
+  buildIniSection,
+  isCpuOnly,
+  previewCommand,
+  splitArgs,
+} from './build.js'
 import { FLAGS } from './registry.js'
 import type { Profile } from './types.js'
 
@@ -153,6 +159,45 @@ describe('registry', () => {
       expect(def.help.en, id).toBeTruthy()
       expect(def.help.ru, id).toBeTruthy()
     }
+  })
+})
+
+describe('zero layers on the GPU', () => {
+  // Measured, not guessed: Qwen3.8-27B Q4_K_M with `--n-gpu-layers 0` dies at
+  // context creation with status 0xC0000409 and no message at all, and the
+  // same model with `--device none` loads. The user's profile said 0 and the
+  // app dutifully built the command that crashes.
+  it('becomes --device none, not --n-gpu-layers 0', () => {
+    const args = buildArgs({ nGpuLayers: 0 })
+    expect(args).toContain('--device')
+    expect(args[args.indexOf('--device') + 1]).toBe('none')
+    expect(args).not.toContain('--n-gpu-layers')
+  })
+
+  it('is written the same way into the router preset', () => {
+    const ini = buildIniSection('m', { nGpuLayers: 0 }, 'D:/m.gguf')
+    expect(ini).toContain('device = none')
+    expect(ini).not.toContain('n-gpu-layers')
+  })
+
+  it('leaves a real layer count alone', () => {
+    const args = buildArgs({ nGpuLayers: 24 })
+    expect(args).toContain('--n-gpu-layers')
+    expect(args).not.toContain('--device')
+  })
+
+  it('wins over a device with nothing on it', () => {
+    // "Zero layers on CUDA0" and "nothing on the GPU" are the same sentence,
+    // and only one of the two spellings survives context creation.
+    const args = buildArgs({ nGpuLayers: 0, device: 'CUDA0' })
+    expect(args[args.indexOf('--device') + 1]).toBe('none')
+  })
+
+  it('reads both spellings as CPU only', () => {
+    expect(isCpuOnly({ nGpuLayers: 0 })).toBe(true)
+    expect(isCpuOnly({ device: 'none' })).toBe(true)
+    expect(isCpuOnly({ nGpuLayers: 24 })).toBe(false)
+    expect(isCpuOnly({})).toBe(false)
   })
 })
 

@@ -21,7 +21,7 @@
 
 import { kvCacheBytes, type ModelGeometry } from './models/geometry.js'
 import type { Hardware, Profile } from './flags/types.js'
-import { withDefaults } from './flags/build.js'
+import { isCpuOnly, withDefaults } from './flags/build.js'
 
 const GiB = 1024 ** 3
 
@@ -190,8 +190,10 @@ export function estimate(input: EstimateInput): Estimate {
   let deviceParts: Estimate['deviceParts']
   // `--device none` is what actually takes the GPU out of play. `-ngl 0`
   // leaves the backend selected with nothing offloaded, which is a different
-  // (and on some models, fatal) thing — see the device flag's help.
-  const cpuOnly = p['device'] === 'none'
+  // (and on some models, fatal) thing — see the device flag's help. The
+  // build rewrites one into the other, so the estimate has to read them the
+  // same way or it would budget device memory for a run that has no device.
+  const cpuOnly = isCpuOnly(p)
   if (device && !cpuOnly) {
     deviceCeiling = device.totalBytes
     const kvOnDevice =
