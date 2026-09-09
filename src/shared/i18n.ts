@@ -197,6 +197,7 @@ export const en = {
   'fix.enable-no-repack': 'Turn off weight repacking',
   'fix.smaller-quant': 'Use a smaller quantisation',
   'fix.lower-ubatch': 'Lower the physical batch size',
+  'finding.ram-in-use': 'Other programs are holding',
   'fix.disable-mlock': 'Stop locking the model in RAM',
 
   'flags.level.basic': 'Basic',
@@ -462,6 +463,7 @@ export const ru: Record<StringKey, string> = {
   'fix.enable-no-repack': 'Отключить переупаковку весов',
   'fix.smaller-quant': 'Взять квант поменьше',
   'fix.lower-ubatch': 'Уменьшить физический размер пакета',
+  'finding.ram-in-use': 'Другие программы занимают',
   'fix.disable-mlock': 'Не закреплять модель в памяти',
 
   'flags.level.basic': 'Основное',

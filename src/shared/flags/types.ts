@@ -27,6 +27,12 @@ export type FlagLevel = 'basic' | 'advanced' | 'expert'
 /** Everything the estimator and the visibility rules get to look at. */
 export interface Hardware {
   totalRamBytes: number
+  /**
+   * What is free RIGHT NOW, when the caller measured it. Optional: a stored
+   * verdict has no "now". When present it is a second, tighter ceiling — see
+   * the estimator for why the fixed reserve alone was not enough.
+   */
+  freeRamBytes?: number
   devices: {
     id: string
     name: string

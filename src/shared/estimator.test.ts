@@ -136,6 +136,35 @@ describe('estimate — replaying what actually happened', () => {
   })
 })
 
+describe('estimate — the machine as it is right now', () => {
+  it('takes the lower of the fixed reserve and what is actually free', () => {
+    // The evening this was found: 20.6 GB free of 27.7. The fixed reserve
+    // allowed 24.7 GB; the machine had 20.6. Auto picked 128K for the Q4_K_M
+    // on the first number, and the projector could not get 3.5 MB.
+    const busy: Hardware = { ...MACHINE, freeRamBytes: 20.6e9 }
+    const p: Profile = {
+      ...COMMON,
+      ctxSize: 131072,
+      noKvOffload: true,
+      flashAttn: 'on',
+      cacheTypeK: 'q8_0',
+      cacheTypeV: 'q4_0',
+      nGpuLayers: 58,
+    }
+    expect(estimate(base(p)).level).not.toBe('wont_fit')
+    const live = estimate({ ...base(p), hardware: busy })
+    expect(live.level).toBe('wont_fit')
+    expect(live.findings.map((f) => f.code)).toContain('ram-in-use')
+  })
+
+  it('changes nothing when nobody measured', () => {
+    const p: Profile = { ...COMMON, ctxSize: 8192 }
+    expect(estimate(base(p)).ramCeiling).toBe(
+      estimate({ ...base(p), hardware: { ...MACHINE } }).ramCeiling,
+    )
+  })
+})
+
 describe('estimate — honesty about what it does not know', () => {
   it('says so when the header carried no head counts', () => {
     const e = estimate({

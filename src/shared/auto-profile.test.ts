@@ -130,6 +130,16 @@ describe('what auto picks on the machine it was calibrated on', () => {
     expect(r.estimate.findings.map((f) => f.code)).toContain('exceeds-ram')
   })
 
+  it('backs off when the machine is busy, rather than picking what would fit on an idle one', () => {
+    // The first Auto on this machine chose 128K for the Q4_K_M with 20.6 GB
+    // free, and the server could not start. Measured free RAM is a second
+    // ceiling now, and the pick has to respect it.
+    const idle = recommendProfile(on())
+    const busy = recommendProfile(on({ hardware: { ...MACHINE, freeRamBytes: 20.6e9 } }))
+    expect(busy.summary.ctxSize).toBeLessThan(idle.summary.ctxSize)
+    expect(busy.summary.level).not.toBe('wont_fit')
+  })
+
   it('does not set a reasoning effort — the client asks per request now', () => {
     expect(recommendProfile(on()).profile['reasoningEffort']).toBeUndefined()
   })

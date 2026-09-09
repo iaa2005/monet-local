@@ -233,9 +233,19 @@ export class Router {
         console.error(`[router] ${exit.id} died: ${exit.label}`)
         void this.announce()
       }
-      for (const re of FAILURE) {
-        const m = re.exec(text)
-        if (m) this.setState('failed', m[0])
+      // The FIRST line that looked like a reason is the reason. llama.cpp
+      // reports a failure as a chain — an allocation that failed, then the
+      // loader that could not continue, then "exiting" — and the last of
+      // those is the least specific. Reported live: the screen said "failed
+      // to load model" while the log said ErrorOutOfDeviceMemory.
+      if (this.stateValue !== 'failed') {
+        for (const re of FAILURE) {
+          const m = re.exec(text)
+          if (m) {
+            this.setState('failed', m[0])
+            break
+          }
+        }
       }
     }
     child.stdout?.on('data', watch)

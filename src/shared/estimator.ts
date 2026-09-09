@@ -36,6 +36,19 @@ const OS_RESERVE = 3 * GiB
 const TIGHT_MARGIN = 2 * GiB
 
 /**
+ * Kept back from what is free at the moment of asking.
+ *
+ * The fixed reserve above is what this box needs at idle. It is not what
+ * the box is using while a chat client, a browser and an editor are open —
+ * measured at 7 GB the evening Auto picked a 128K context for the Q4_K_M
+ * and the projector could not get 3.5 MB of device memory. On a shared-
+ * memory GPU the "device" heap is this same RAM, so the two ceilings are one
+ * ceiling, and the lower of them is the real one. Two gigabytes on top of
+ * what is free leaves room for the cache to fill and the OS to breathe.
+ */
+const LIVE_MARGIN = 2 * GiB
+
+/**
  * Repacking keeps a second, SIMD-friendly copy of the quantised weights.
  * Measured at roughly a third more resident memory on a Q4_K_M model; it is
  * the difference between 17-18 GB working set and 20.6 GB with nothing left.
@@ -67,6 +80,7 @@ export type VerdictLevel = 'fits' | 'tight' | 'wont_fit'
 export interface Finding {
   code:
     | 'exceeds-ram'
+    | 'ram-in-use'
     | 'exceeds-device'
     | 'repack-cost'
     | 'kv-dominates'
@@ -161,7 +175,13 @@ export function estimate(input: EstimateInput): Estimate {
   const compute = computeBytes(Number(p['ubatchSize'] ?? 256))
 
   const totalBytes = weightsBytes + kvBytes + compute
-  const ramCeiling = Math.max(0, hw.totalRamBytes - OS_RESERVE)
+  const fixedCeiling = Math.max(0, hw.totalRamBytes - OS_RESERVE)
+  const liveCeiling =
+    hw.freeRamBytes !== undefined
+      ? Math.max(0, hw.freeRamBytes - LIVE_MARGIN)
+      : undefined
+  const ramCeiling =
+    liveCeiling !== undefined ? Math.min(fixedCeiling, liveCeiling) : fixedCeiling
   const headroomBytes = ramCeiling - totalBytes
 
   const findings: Finding[] = []
@@ -177,6 +197,15 @@ export function estimate(input: EstimateInput): Estimate {
   if (headroomBytes < 0) {
     level = 'wont_fit'
     findings.push({ code: 'exceeds-ram', bytes: -headroomBytes })
+    // Say WHICH wall it was. "Exceeds RAM" on a machine with room to spare
+    // sends someone to buy memory; "other programs are using it" sends
+    // them to close a browser.
+    if (liveCeiling !== undefined && liveCeiling < fixedCeiling) {
+      findings.push({
+        code: 'ram-in-use',
+        bytes: hw.totalRamBytes - (hw.freeRamBytes ?? hw.totalRamBytes),
+      })
+    }
   } else if (headroomBytes < TIGHT_MARGIN) {
     level = 'tight'
     findings.push({ code: 'tight', bytes: headroomBytes })

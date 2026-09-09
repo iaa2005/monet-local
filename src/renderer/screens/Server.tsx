@@ -200,6 +200,10 @@ export function Server(): JSX.Element {
         // changes. An edit in place keeps the key, so force it.
         loadedFor.current = null
         setSelected(modelId)
+        // Written, shown, and NOT loaded: the smallest arrangement did not
+        // fit, and starting it anyway would only turn the verdict into a
+        // crash a minute later. The note says what is in the way.
+        if (r.summary.level === 'wont_fit') return
         if (status?.state === 'ready') await api()!.server.apply()
         else await api()!.server.start()
         const now = await api()!.server.status()
@@ -712,7 +716,7 @@ function AutoNote({
         {r.created ? t('server.autoCreated') : t('server.autoEdited')}
       </Badge>
       <span className="font-medium">{profile?.name}</span>
-      <span className="text-muted-foreground">{parts.join(' \u00b7 ')}</span>
+      <span className="text-muted-foreground">{parts.join(' · ')}</span>
       {s.level === 'wont_fit' ? (
         <span className="basis-full text-xs">{t('server.autoWontFit')}</span>
       ) : null}
@@ -723,7 +727,7 @@ function AutoNote({
         className="text-xs text-muted-foreground hover:text-foreground"
         aria-label="dismiss"
       >
-        \u00d7
+        ×
       </button>
     </div>
   )

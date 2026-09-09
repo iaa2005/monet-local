@@ -1,5 +1,5 @@
 import { statSync } from 'node:fs'
-import { cpus, totalmem } from 'node:os'
+import { cpus, freemem, totalmem } from 'node:os'
 import { app, ipcMain } from 'electron'
 import { recommendProfile, type AutoSummary } from '@shared/auto-profile.js'
 import { estimate } from '@shared/estimator.js'
@@ -70,6 +70,11 @@ function activePack() {
 export function hardware(): Hardware {
   return {
     totalRamBytes: totalmem(),
+    // What is free at THIS moment. The panel's verdict and Auto's pick both
+    // read it: a machine with a browser and a chat client open has less to
+    // give than its total minus a fixed reserve, and the projector failing
+    // to get 3.5 MB of device memory is what that difference looks like.
+    freeRamBytes: freemem(),
     devices: activePack()?.devices ?? [],
   }
 }
