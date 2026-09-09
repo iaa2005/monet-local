@@ -8,7 +8,7 @@ import type { ModelInfo } from '@main/models/describe.js'
 import type { Estimate } from '@shared/estimator.js'
 import type { Hardware, Profile } from '@shared/flags/types.js'
 import type { ProfilesFile } from '@main/app/profiles-store.js'
-import type { RouterStatus } from '@main/server/router.js'
+import type { Activity, RouterStatus } from '@main/server/router.js'
 import type { StrayProcess } from '@main/server/orphans.js'
 import type { StoredRun } from '@main/bench/run.js'
 import type { HfFile, HfRepo } from '@shared/hf.js'
@@ -87,6 +87,7 @@ export type {
   HfFile,
   HfRepo,
   StoredRun,
+  Activity,
   Estimate,
   Hardware,
   InstalledPack,
@@ -154,6 +155,8 @@ const api = {
   server: {
     status: (): Promise<RouterStatus> => ipcRenderer.invoke('server:status'),
     hardware: (): Promise<Hardware> => ipcRenderer.invoke('server:hardware'),
+    activity: (): Promise<Record<string, Activity>> =>
+      ipcRenderer.invoke('server:activity'),
     start: (): Promise<RouterStatus> => ipcRenderer.invoke('server:start'),
     stop: (): Promise<RouterStatus> => ipcRenderer.invoke('server:stop'),
     pending: (): Promise<string[]> => ipcRenderer.invoke('server:pending'),
@@ -171,6 +174,13 @@ const api = {
       const h = (_e: unknown, s: RouterStatus): void => cb(s)
       ipcRenderer.on('server:status', h)
       return () => ipcRenderer.off('server:status', h)
+    },
+    onActivity: (
+      cb: (a: Record<string, Activity>) => void,
+    ): (() => void) => {
+      const h = (_e: unknown, a: Record<string, Activity>): void => cb(a)
+      ipcRenderer.on('server:activity', h)
+      return () => ipcRenderer.off('server:activity', h)
     },
   },
 

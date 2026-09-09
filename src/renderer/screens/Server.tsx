@@ -14,6 +14,7 @@ import { ipcMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { useT } from '@/stores/uiStore'
 import type {
+  Activity,
   EndpointInfo,
   ModelInfo,
   ProfilesFile,
@@ -24,6 +25,8 @@ import type {
 export function Server(): JSX.Element {
   const t = useT()
   const [status, setStatus] = useState<RouterStatus | null>(null)
+  /** What each loaded model is doing, refreshed twice a second. */
+  const [activity, setActivity] = useState<Record<string, Activity>>({})
   const [models, setModels] = useState<ModelInfo[]>([])
   const [hardware, setHardware] = useState<Hardware>({
     totalRamBytes: 0,
@@ -50,7 +53,7 @@ export function Server(): JSX.Element {
     'h-9 w-full rounded-lg border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
   const refresh = useCallback(async () => {
-    const [s, scan, hw, str, p, pend, ep] = await Promise.all([
+    const [s, scan, hw, str, p, pend, ep, act] = await Promise.all([
       api()?.server.status(),
       api()?.models.scan(),
       api()?.server.hardware(),
@@ -58,6 +61,7 @@ export function Server(): JSX.Element {
       api()?.profiles.get(),
       api()?.server.pending(),
       api()?.server.endpoint(),
+      api()?.server.activity(),
     ])
     if (s) setStatus(s)
     if (ep) setEndpoint(ep)
@@ -65,6 +69,7 @@ export function Server(): JSX.Element {
     if (str) setStrays(str)
     if (p) setProfiles(p)
     if (pend) setPending(pend)
+    if (act) setActivity(act)
     if (scan) {
       setModels(scan.models)
       setSelected((cur) => cur ?? scan.models[0]?.id ?? null)
@@ -93,7 +98,13 @@ export function Server(): JSX.Element {
 
   useEffect(() => {
     void refresh()
-    return api()?.server.onStatus(setStatus)
+    const off = [
+      api()?.server.onStatus(setStatus),
+      api()?.server.onActivity(setActivity),
+    ]
+    return () => {
+      for (const f of off) f?.()
+    }
   }, [refresh])
 
   // The verdict follows every keystroke: it is only useful if it answers
@@ -345,13 +356,26 @@ export function Server(): JSX.Element {
                       : loading.has(m.id)
                         ? 'bg-warn'
                         : 'bg-border',
+                    // Working, not merely resident. The row already says so
+                    // in words; this is what catches the eye from across a
+                    // list of eight models.
+                    activity[m.id] && activity[m.id]!.state !== 'idle'
+                      ? 'animate-pulse'
+                      : null,
                   )}
                 />
                 <span className="text-sm font-medium">{m.displayName}</span>
                 <Badge tone="brand">{m.quant}</Badge>
                 <Badge>{bytes(m.sizeBytes, 1)}</Badge>
                 {loaded.has(m.id) ? (
-                  <Badge tone="ok">{t('server.loaded')}</Badge>
+                  // Until the first slot poll lands the honest thing to say
+                  // is that the weights are in memory; a second later it
+                  // says what the model is doing with them.
+                  activity[m.id] ? (
+                    <Live a={activity[m.id]!} />
+                  ) : (
+                    <Badge tone="ok">{t('server.loaded')}</Badge>
+                  )
                 ) : null}
                 {pending.includes(m.id) && running ? (
                   <Badge tone="warn" title={t('server.pendingHelp')}>
@@ -555,5 +579,69 @@ export function Server(): JSX.Element {
         </Section>
       ) : null}
     </Page>
+  )
+}
+
+/** A live count, grouped so four digits do not read as one number. */
+function count(n: number): string {
+  return n.toLocaleString('en-US')
+}
+
+/**
+ * What a loaded model is doing, in the row that offers to unload it.
+ *
+ * Three states, because llama.cpp has three: the weights are resident and
+ * nothing is asked of them; a prompt is being read; an answer is being
+ * written. The middle one is worth its own word — on a 27B running from
+ * system memory a long prompt is a minute of apparent silence, and "Ready"
+ * during it is the wrong answer to "is it stuck?".
+ *
+ * Numbers are `tabular-nums` on purpose: a counter that changes width every
+ * time a 1 becomes a 7 drags the badge beside it back and forth.
+ */
+function Live({ a }: { a: Activity }): JSX.Element {
+  const t = useT()
+  if (a.state === 'idle') return <Badge tone="ok">{t('server.act.ready')}</Badge>
+
+  const detail = [
+    a.cachedTokens
+      ? `${count(a.cachedTokens)} ${t('server.act.tok')} — ${t('server.act.cached')}`
+      : '',
+    a.contextMax
+      ? `${count(a.contextTokens)} / ${count(a.contextMax)} ${t('server.act.context')}`
+      : '',
+    a.busySlots > 1 ? `${a.busySlots} ${t('server.act.parallel')}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  return (
+    <Badge tone={a.state === 'generating' ? 'brand' : 'warn'} title={detail}>
+      {/* One flex child, not four: the badge puts a gap between its items,
+          and the separators here are punctuation, not layout. */}
+      <span>
+        {a.state === 'generating' ? (
+          <>
+            {t('server.act.generating')} ·{' '}
+            <span className="tabular-nums">
+              {count(a.decoded)} {t('server.act.tok')}
+            </span>
+            {a.tokensPerSecond !== undefined ? (
+              <span className="tabular-nums opacity-70">
+                {' '}
+                · {a.tokensPerSecond.toFixed(1)} {t('server.act.perSecond')}
+              </span>
+            ) : null}
+          </>
+        ) : (
+          <>
+            {t('server.act.prompt')} ·{' '}
+            <span className="tabular-nums">
+              {count(a.promptTokens)} {t('server.act.tok')}
+            </span>
+          </>
+        )}
+      </span>
+    </Badge>
   )
 }

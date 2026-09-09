@@ -23,6 +23,9 @@ import { join } from 'node:path'
 import { buildIni } from '@shared/flags/build.js'
 import type { Profile } from '@shared/flags/types.js'
 import { dataDir, logsDir } from '../app/settings-store.js'
+import { readSlots, tick, type Activity, type Rate } from './activity.js'
+
+export type { Activity } from './activity.js'
 
 export type RouterState =
   | 'stopped'
@@ -53,6 +56,9 @@ export interface RouterStatus {
   models: RouterModel[]
 }
 
+/** The poll's own beat. `/models` runs on every second one. */
+const TICK_MS = 500
+
 /**
  * Failure signatures worth showing verbatim. Everything else in a llama.cpp
  * log is noise until something goes wrong, and then these are the lines that
@@ -75,6 +81,18 @@ export class Router {
   private poll: NodeJS.Timeout | null = null
   private modelsKey = ''
   private startedEntries: RouterEntry[] = []
+  private readonly activityListeners = new Set<
+    (a: Record<string, Activity>) => void
+  >()
+  /** Last known status, so the fast tick knows what to ask about. */
+  private lastModels: RouterModel[] = []
+  private readonly rates = new Map<string, Rate>()
+  private lastActivity: Record<string, Activity> = {}
+  private activityKey = ''
+  private ticks = 0
+  /** One poll of each kind at a time: a slow answer must not stack them up. */
+  private polling = false
+  private pollingActivity = false
 
   constructor(
     private readonly serverPath: string,
@@ -102,6 +120,30 @@ export class Router {
   onChange(cb: (s: RouterStatus) => void): () => void {
     this.listeners.add(cb)
     return () => this.listeners.delete(cb)
+  }
+
+  /**
+   * What each loaded model is doing, several times a second.
+   *
+   * Deliberately its own channel. This changes on every token, and the
+   * status stream is also what the gateway broadcasts to clients over SSE —
+   * putting a token counter on it would turn a "the model list changed"
+   * event into a firehose for everyone subscribed.
+   */
+  onActivity(cb: (a: Record<string, Activity>) => void): () => void {
+    this.activityListeners.add(cb)
+    return () => this.activityListeners.delete(cb)
+  }
+
+  /**
+   * The last thing the poll saw.
+   *
+   * A screen only hears about CHANGES, so one that mounts while a model sits
+   * idle would hear nothing at all until something happened. This is what it
+   * asks on the way in.
+   */
+  get activity(): Record<string, Activity> {
+    return this.lastActivity
   }
 
   private async announce(): Promise<void> {
@@ -195,24 +237,118 @@ export class Router {
    */
   private startPolling(): void {
     this.stopPolling()
-    this.poll = setInterval(() => void this.pollOnce(), 1000)
+    // Two rates from one timer. What is loaded changes on the scale of a
+    // minute and costs a `/models` round trip; what a model is doing changes
+    // on the scale of a token, and asking a busy server twice a second is
+    // what makes the counter read like a counter rather than a log.
+    this.poll = setInterval(() => {
+      this.ticks++
+      if (this.ticks % 2 === 0) void this.pollOnce()
+      void this.pollActivity()
+    }, TICK_MS)
   }
 
   private stopPolling(): void {
     if (this.poll) clearInterval(this.poll)
     this.poll = null
     this.modelsKey = ''
+    this.activityKey = ''
+    this.lastActivity = {}
+    this.lastModels = []
+    this.rates.clear()
   }
 
   private async pollOnce(): Promise<void> {
-    if (this.stateValue !== 'ready') return
+    if (this.stateValue !== 'ready' || this.polling) return
+    this.polling = true
+    try {
+      await this.pollModels()
+    } finally {
+      this.polling = false
+    }
+  }
+
+  private async pollModels(): Promise<void> {
     const s = await this.status()
+    this.lastModels = s.models
     // Only when something actually moved: a status push per second would
     // re-render the screen for no reason.
     const key = s.models.map((m) => `${m.id}:${m.status}`).join(',')
     if (key === this.modelsKey) return
     this.modelsKey = key
     for (const cb of this.listeners) cb(s)
+  }
+
+  /**
+   * Ask every loaded model what it is doing.
+   *
+   * Nothing loaded means nothing asked — the whole tick costs nothing on an
+   * idle machine, which is the state it spends most of its time in.
+   */
+  private async pollActivity(): Promise<void> {
+    if (this.stateValue !== 'ready' || !this.activityListeners.size) return
+    if (this.pollingActivity) return
+    this.pollingActivity = true
+    try {
+      await this.readActivity()
+    } finally {
+      this.pollingActivity = false
+    }
+  }
+
+  private async readActivity(): Promise<void> {
+    const loaded = this.lastModels.filter((m) => m.status === 'loaded')
+    for (const id of [...this.rates.keys()]) {
+      if (!loaded.some((m) => m.id === id)) this.rates.delete(id)
+    }
+    if (!loaded.length) {
+      this.lastActivity = {}
+      if (this.activityKey === '') return
+      this.activityKey = ''
+      for (const cb of this.activityListeners) cb({})
+      return
+    }
+
+    const now = Date.now()
+    const out: Record<string, Activity> = {}
+    await Promise.all(
+      loaded.map(async (m) => {
+        const a = await this.slotsFor(m.id)
+        if (!a) return
+        // The speed belongs to the reply, not to the model: a slot that has
+        // gone idle keeps no figure to show next time.
+        if (a.state === 'generating') {
+          const r = tick(this.rates.get(m.id), a.decoded, now)
+          this.rates.set(m.id, r)
+          if (r.value !== undefined) a.tokensPerSecond = r.value
+        } else {
+          this.rates.delete(m.id)
+        }
+        out[m.id] = a
+      }),
+    )
+
+    this.lastActivity = out
+    const key = JSON.stringify(out)
+    if (key === this.activityKey) return
+    this.activityKey = key
+    for (const cb of this.activityListeners) cb(out)
+  }
+
+  /** One model's slots, or nothing if the child is not answering. */
+  private async slotsFor(model: string): Promise<Activity | null> {
+    try {
+      const res = await fetch(
+        `${this.base()}/slots?model=${encodeURIComponent(model)}`,
+        // A model deep in a long prefill still answers this promptly; if it
+        // does not, the tick is skipped rather than queued behind it.
+        { signal: AbortSignal.timeout(2000) },
+      )
+      if (!res.ok) return null
+      return readSlots(await res.json())
+    } catch {
+      return null
+    }
   }
 
   /** Wait for a model to reach a settled state, or say why it did not. */

@@ -11,6 +11,7 @@ const { Gateway } = await import('./gateway.js')
 const { ensureDirs } = await import('../app/settings-store.js')
 const { scanFolders } = await import('../models/library.js')
 const { publicModels } = await import('@shared/public-models.js')
+import type { Activity } from './activity.js'
 
 const LLAMA = 'D:/Colibri/llamacpp/llama-server.exe'
 const MODELS = 'D:/Colibri/models'
@@ -129,7 +130,12 @@ describe.skipIf(!enabled)('end to end, through the gateway', () => {
       body: JSON.stringify({
         model: modelId,
         messages: [{ role: 'user', content: 'Reply with exactly: OK' }],
-        max_tokens: 24,
+        // Room for the thinking AND the answer. This model reasons before
+        // it replies, and a cap that only fits the reasoning returns an
+        // empty `content` with the words in `reasoning_content` — which is
+        // correct behaviour and a flaky test. Measured: the thinking for
+        // this prompt runs to about eighty tokens.
+        max_tokens: 200,
       }),
     })
     expect(res.status).toBe(200)
@@ -140,7 +146,7 @@ describe.skipIf(!enabled)('end to end, through the gateway', () => {
     expect(body.choices[0]?.message.content).toBeTruthy()
     // Not an assertion about speed — just proof this ran on real weights.
     expect(body.timings?.predicted_per_second).toBeGreaterThan(0)
-  }, 180_000)
+  }, 300_000)
 
   it('answers the Anthropic Messages API on the same port', async () => {
     // The reason Claude Code can point ANTHROPIC_BASE_URL here.
@@ -149,7 +155,9 @@ describe.skipIf(!enabled)('end to end, through the gateway', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         model: modelId,
-        max_tokens: 24,
+        // As above: the reply has to survive the thinking, or the `text`
+        // block this test is about never gets written.
+        max_tokens: 200,
         messages: [{ role: 'user', content: 'Reply with exactly: OK' }],
       }),
     })
@@ -169,7 +177,7 @@ describe.skipIf(!enabled)('end to end, through the gateway', () => {
     const text = body.content?.find((c) => c.type === 'text')
     expect(thinking?.thinking, JSON.stringify(body).slice(0, 300)).toBeTruthy()
     expect(text?.text, JSON.stringify(body).slice(0, 300)).toBeTruthy()
-  }, 180_000)
+  }, 300_000)
 
   it('streams a completion in pieces', async () => {
     const res = await fetch(url('/v1/chat/completions'), {
@@ -251,4 +259,53 @@ describe.skipIf(!enabled)('end to end, through the gateway', () => {
     expect(seen).toContain('loaded')
   }, 180_000)
 
+  it('reports what the model is doing while it does it', async () => {
+    // The whole path the Server screen watches: the router's own timer, a
+    // `/slots` call per loaded model, the fold in activity.ts and the rate.
+    // Unit tests cover the parsing against captured JSON; this is the part
+    // that would break if llama.cpp renamed a field or the router stopped
+    // proxying the endpoint, and neither would show up anywhere else.
+    const seen: Activity[] = []
+    const off = router.onActivity((a) => {
+      const mine = a[modelId]
+      if (mine) seen.push(mine)
+    })
+
+    const res = await fetch(url('/v1/chat/completions'), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: modelId,
+        messages: [
+          { role: 'user', content: 'Explain what a matrix is, at length.' },
+        ],
+        max_tokens: 64,
+        stream: true,
+      }),
+    })
+    const reader = res.body!.getReader()
+    for (;;) {
+      const { done } = await reader.read()
+      if (done) break
+    }
+    // One more beat, so the last sample is the finished state.
+    await new Promise((r) => setTimeout(r, 1500))
+    off()
+
+    const busy = seen.filter((a) => a.state === 'generating')
+    expect(busy.length).toBeGreaterThan(1)
+    // A counter, not a flag: it has to go up.
+    const counts = busy.map((a) => a.decoded)
+    expect(Math.max(...counts)).toBeGreaterThan(Math.min(...counts))
+    for (let i = 1; i < counts.length; i++) {
+      expect(counts[i]!).toBeGreaterThanOrEqual(counts[i - 1]!)
+    }
+    // A speed appears once there is a window to divide by, and it is a
+    // speed rather than a stuck constant.
+    const rates = busy.map((a) => a.tokensPerSecond).filter((v) => v !== undefined)
+    expect(rates.length).toBeGreaterThan(0)
+    for (const r of rates) expect(r).toBeGreaterThan(0)
+    // And it stops: the last thing the screen is told is that it is idle.
+    expect(seen[seen.length - 1]?.state).toBe('idle')
+  }, 300_000)
 })

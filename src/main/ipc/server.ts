@@ -29,6 +29,8 @@ const ROUTER_PORT = 17172
 
 let router: Router | null = null
 let gateway: Gateway | null = null
+/** Whether this process has already subscribed to the Router it holds. */
+let wired = false
 
 /** The library as a client sees it — shape lives in shared/public-models. */
 function publicModelList(): unknown[] {
@@ -120,6 +122,8 @@ export function registerServerIpc(): void {
     return router.status()
   })
 
+  ipcMain.handle('server:activity', () => router?.activity ?? {})
+
   ipcMain.handle('server:hardware', () => hardware())
 
   // Ours: this process, and the router it spawned. Without the second the
@@ -142,11 +146,22 @@ export function registerServerIpc(): void {
       )
     }
     router ??= new Router(pack.serverPath, ROUTER_PORT)
-    router.onChange((s) => {
-      statusCache = s
-      getMainWindow()?.webContents.send('server:status', s)
-      gateway?.broadcast('status', s)
-    })
+    // Once per Router, not once per Start: the object outlives a stop, and
+    // subscribing again on the second start would send every status twice.
+    if (!wired) {
+      wired = true
+      router.onChange((s) => {
+        statusCache = s
+        getMainWindow()?.webContents.send('server:status', s)
+        gateway?.broadcast('status', s)
+      })
+      // Its own channel, and the window only. This moves on every token; the
+      // gateway's SSE stream is for clients watching the model list, and a
+      // token counter has no business on it.
+      router.onActivity((a) => {
+        getMainWindow()?.webContents.send('server:activity', a)
+      })
+    }
     await router.start(entries())
 
     const settings = readSettings()
@@ -274,4 +289,5 @@ export async function shutdownServer(): Promise<void> {
   gateway = null
   await router?.stop()
   router = null
+  wired = false
 }
