@@ -44,6 +44,17 @@ export interface PublicModel {
    * budgeting against the advertised figure walks straight into that.
    */
   context_configured: number | null
+  /**
+   * Most tokens this model may spend on ONE answer — `--n-predict`, as the
+   * profile sets it. Null when it is unlimited (-1) or unset.
+   *
+   * Published for the same reason as the context: a client that guesses is a
+   * client that guesses wrong. Code Monet asks for `max_tokens` on every
+   * request and defaulted to 16000 of them, so a profile raised to 32000 did
+   * nothing at all — the ceiling that applied was the one the caller had
+   * never been told about.
+   */
+  predict_configured: number | null
   modalities: ('text' | 'image')[]
   moe: boolean
   /** Whether this machine could run it as configured. */
@@ -65,6 +76,9 @@ export function publicModels(
       hardware,
     })
     const ctx = profile['ctxSize']
+    // -1 is llama.cpp's "until the context runs out". There is no number to
+    // publish for that, and null is how this shape says "no limit set".
+    const predict = profile['nPredict']
     return {
       id: m.id,
       object: 'model',
@@ -76,6 +90,7 @@ export function publicModels(
       size_bytes: m.sizeBytes,
       context_max: m.contextMax ?? null,
       context_configured: typeof ctx === 'number' ? ctx : null,
+      predict_configured: typeof predict === 'number' && predict > 0 ? predict : null,
       modalities: m.mmprojPath ? ['text', 'image'] : ['text'],
       moe: m.moe,
       verdict: verdict.level,
