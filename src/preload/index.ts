@@ -8,7 +8,7 @@ import type { ModelInfo } from '@main/models/describe.js'
 import type { Estimate } from '@shared/estimator.js'
 import type { Hardware, Profile } from '@shared/flags/types.js'
 import type { ProfilesFile } from '@main/app/profiles-store.js'
-import type { AutoProfileResult } from '@main/ipc/server.js'
+import type { AutoAttempt, AutoProfileResult, AutoProgress } from '@main/ipc/server.js'
 import type { Activity, RouterStatus } from '@main/server/router.js'
 import type { StrayProcess } from '@main/server/orphans.js'
 import type { StoredRun } from '@main/bench/run.js'
@@ -83,7 +83,9 @@ export type DownloadEvent = DownloadProgress & { path: string }
 
 export type {
   AppSettings,
+  AutoAttempt,
   AutoProfileResult,
+  AutoProgress,
   Device,
   DownloadResult,
   HfFile,
@@ -172,6 +174,12 @@ const api = {
     endpoint: (): Promise<EndpointInfo> => ipcRenderer.invoke('server:endpoint'),
     estimate: (modelId: string, values: Profile): Promise<EstimateResult> =>
       ipcRenderer.invoke('server:estimate', modelId, values),
+    /** Auto's attempts as they happen: loading, probing, failed, ok. */
+    onAutoProgress: (cb: (p: AutoProgress) => void): (() => void) => {
+      const h = (_e: unknown, p: AutoProgress): void => cb(p)
+      ipcRenderer.on('server:autoProgress', h)
+      return () => ipcRenderer.off('server:autoProgress', h)
+    },
     onStatus: (cb: (s: RouterStatus) => void): (() => void) => {
       const h = (_e: unknown, s: RouterStatus): void => cb(s)
       ipcRenderer.on('server:status', h)

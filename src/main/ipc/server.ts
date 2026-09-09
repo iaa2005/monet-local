@@ -1,7 +1,8 @@
 import { statSync } from 'node:fs'
 import { cpus, freemem, totalmem } from 'node:os'
 import { app, ipcMain } from 'electron'
-import { recommendProfile, type AutoSummary } from '@shared/auto-profile.js'
+import { recommendProfile, type AutoResult, type AutoSummary } from '@shared/auto-profile.js'
+import { autoTune, type AutoAttempt, type AutoProgress } from '../server/auto-tune.js'
 import { estimate } from '@shared/estimator.js'
 import { publicModels } from '@shared/public-models.js'
 import { buildArgs, previewCommand } from '@shared/flags/build.js'
@@ -94,13 +95,20 @@ function mmprojBytes(m: ModelInfo): number {
   }
 }
 
+export type { AutoAttempt, AutoProgress }
+
 export interface AutoProfileResult {
   file: ProfilesFile
   profileId: string
   /** True when a configuration was made for this model; false when its own
    * existing one was edited in place. */
   created: boolean
+  /** What was written in the end. */
   summary: AutoSummary
+  /** Every arrangement tried, in order, and how each one ended. */
+  attempts: AutoAttempt[]
+  /** The model answered with the configuration written. */
+  running: boolean
 }
 
 /**
@@ -112,10 +120,46 @@ export interface AutoProfileResult {
  * is edited in place rather than multiplied. The count the screen shows
  * beside a shared profile is the same count this decides by.
  */
-function autoProfile(modelId: string): AutoProfileResult {
+/**
+ * Where Auto writes: the model's own configuration, made if it has none.
+ * Decided once, before the first attempt, so every attempt edits the same
+ * one rather than leaving a configuration per try behind.
+ */
+function autoTarget(modelId: string, first: Profile): { profileId: string; created: boolean } {
   const model = models().find((m) => m.id === modelId)
   if (!model) throw new Error(`unknown model ${modelId}`)
-  const { profile, summary } = recommendProfile({
+  const current = profileFor(modelId)
+  if (ownsProfile(modelId, models().map((m) => m.id))) {
+    setProfileValues(current.id, first)
+    return { profileId: current.id, created: false }
+  }
+  const name = `Auto · ${model.displayName} ${model.quant}`.trim()
+  const made = createProfile(name, first)
+  assignProfile(modelId, made.id)
+  return { profileId: made.id, created: true }
+}
+
+/** Four tokens through the router: the only proof a configuration runs. */
+async function probeModel(modelId: string): Promise<void> {
+  if (!router) throw new Error('server is not running')
+  const res = await fetch(`http://127.0.0.1:${router.port}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: modelId,
+      max_tokens: 4,
+      messages: [{ role: 'user', content: 'Say OK.' }],
+    }),
+    signal: AbortSignal.timeout(180_000),
+  })
+  if (!res.ok) throw new Error(`${res.status} ${(await res.text()).slice(0, 200)}`)
+  await res.json()
+}
+
+async function autoProfile(modelId: string): Promise<AutoProfileResult> {
+  const model = models().find((m) => m.id === modelId)
+  if (!model) throw new Error(`unknown model ${modelId}`)
+  const first: AutoResult = recommendProfile({
     fileBytes: model.sizeBytes,
     ...(model.geometry ? { geometry: model.geometry } : {}),
     ...(model.contextMax ? { contextMax: model.contextMax } : {}),
@@ -123,24 +167,97 @@ function autoProfile(modelId: string): AutoProfileResult {
     hardware: hardware(),
     cpuThreads: cpus().length,
   })
+  const target = autoTarget(modelId, first.profile)
 
-  const current = profileFor(modelId)
-  if (ownsProfile(modelId, models().map((m) => m.id))) {
+  // Written and shown, not tried: the estimator says even the smallest
+  // arrangement does not fit, and the note says what is in the way. Loading
+  // it would only turn that verdict into a crash a minute later.
+  if (first.summary.level === 'wont_fit') {
     return {
-      file: setProfileValues(current.id, profile),
-      profileId: current.id,
-      created: false,
-      summary,
+      file: readProfiles(),
+      ...target,
+      summary: first.summary,
+      attempts: [],
+      running: false,
     }
   }
-  const name = `Auto · ${model.displayName} ${model.quant}`.trim()
-  const made = createProfile(name, profile)
+
+  if (!router) await startServer()
+  const { result, attempts } = await autoTune(modelId, first, model.geometry, {
+    router: () => router!,
+    write: (p) => void setProfileValues(target.profileId, p),
+    entries,
+    probe: probeModel,
+    onProgress: (p) => getMainWindow()?.webContents.send('server:autoProgress', p),
+  })
+  push()
   return {
-    file: assignProfile(modelId, made.id),
-    profileId: made.id,
-    created: true,
-    summary,
+    file: readProfiles(),
+    ...target,
+    summary: result.summary,
+    attempts,
+    running: attempts.some((a) => a.ok),
   }
+}
+
+/**
+ * Start the router and the gateway. Its own function because Auto needs
+ * it too: a model cannot be tried on a server that is not up, and the
+ * gateway has to be there for the client that asked in the first place.
+ */
+// Ours: this process, and the router it spawned. Without the second the
+// app reports its own server as someone else's and offers to kill it.
+const ownPids = (): number[] =>
+  [process.pid, router?.pid].filter((p): p is number => p !== undefined)
+
+async function startServer(): Promise<NonNullable<typeof statusCache>> {
+    const pack = activePack()
+    if (!pack) throw new Error('no runtime installed')
+    // Two llama-servers over one set of weights is how a machine ends up with
+    // 103 MB free and 300k page faults a second. Refuse rather than join in.
+    const strays = await findStrays(ownPids())
+    if (strays.length && !router) {
+      throw new Error(
+        `llama-server is already running (pid ${strays.map((s) => s.pid).join(', ')})`,
+      )
+    }
+    router ??= new Router(pack.serverPath, ROUTER_PORT)
+    // Once per Router, not once per Start: the object outlives a stop, and
+    // subscribing again on the second start would send every status twice.
+    if (!wired) {
+      wired = true
+      router.onChange((s) => {
+        statusCache = s
+        getMainWindow()?.webContents.send('server:status', s)
+        gateway?.broadcast('status', s)
+      })
+      // Its own channel, and the window only. This moves on every token; the
+      // gateway's SSE stream is for clients watching the model list, and a
+      // token counter has no business on it.
+      router.onActivity((a) => {
+        getMainWindow()?.webContents.send('server:activity', a)
+      })
+    }
+    await router.start(entries())
+
+    const settings = readSettings()
+    gateway ??= new Gateway(settings.port, {
+      router: () => router,
+      models: () => publicModelList(),
+      info: () => ({
+        name: 'Monet Local',
+        version: app.getVersion(),
+        llama_build: pack.build,
+        backend: pack.backendId,
+        capabilities: { openai: true, anthropic: true },
+        management_api: '/monet-local/v1',
+      }),
+      apiKey: () => readSettings().apiKey,
+      networkAccess: () => readSettings().networkAccess,
+    })
+    await gateway.start()
+    statusCache = await router.status()
+    return statusCache
 }
 
 /** Every model in the library becomes an INI section; none is auto-loaded. */
@@ -194,63 +311,10 @@ export function registerServerIpc(): void {
 
   ipcMain.handle('server:hardware', () => hardware())
 
-  // Ours: this process, and the router it spawned. Without the second the
-  // app reports its own server as someone else's and offers to kill it.
-  const ownPids = (): number[] =>
-    [process.pid, router?.pid].filter((p): p is number => p !== undefined)
-
   ipcMain.handle('server:strays', () => findStrays(ownPids()))
   ipcMain.handle('server:killStray', (_e, pid: number) => killStray(pid))
 
-  ipcMain.handle('server:start', async () => {
-    const pack = activePack()
-    if (!pack) throw new Error('no runtime installed')
-    // Two llama-servers over one set of weights is how a machine ends up with
-    // 103 MB free and 300k page faults a second. Refuse rather than join in.
-    const strays = await findStrays(ownPids())
-    if (strays.length && !router) {
-      throw new Error(
-        `llama-server is already running (pid ${strays.map((s) => s.pid).join(', ')})`,
-      )
-    }
-    router ??= new Router(pack.serverPath, ROUTER_PORT)
-    // Once per Router, not once per Start: the object outlives a stop, and
-    // subscribing again on the second start would send every status twice.
-    if (!wired) {
-      wired = true
-      router.onChange((s) => {
-        statusCache = s
-        getMainWindow()?.webContents.send('server:status', s)
-        gateway?.broadcast('status', s)
-      })
-      // Its own channel, and the window only. This moves on every token; the
-      // gateway's SSE stream is for clients watching the model list, and a
-      // token counter has no business on it.
-      router.onActivity((a) => {
-        getMainWindow()?.webContents.send('server:activity', a)
-      })
-    }
-    await router.start(entries())
-
-    const settings = readSettings()
-    gateway ??= new Gateway(settings.port, {
-      router: () => router,
-      models: () => publicModelList(),
-      info: () => ({
-        name: 'Monet Local',
-        version: app.getVersion(),
-        llama_build: pack.build,
-        backend: pack.backendId,
-        capabilities: { openai: true, anthropic: true },
-        management_api: '/monet-local/v1',
-      }),
-      apiKey: () => readSettings().apiKey,
-      networkAccess: () => readSettings().networkAccess,
-    })
-    await gateway.start()
-    statusCache = await router.status()
-    return statusCache
-  })
+  ipcMain.handle('server:start', () => startServer())
 
   ipcMain.handle('server:stop', async () => {
     await gateway?.stop()

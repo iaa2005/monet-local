@@ -142,6 +142,15 @@ export const en = {
   'server.autoThreads': 'threads',
   'server.autoWontFit':
     'Nothing fits this machine comfortably; this is the smallest arrangement, and the verdict below says why.',
+  'server.autoPhase.loading': 'loading',
+  'server.autoPhase.probing': 'asking for a token',
+  'server.autoPhase.failed': 'failed',
+  'server.autoPhase.ok': 'answered',
+  'server.autoPhase.gave-up': 'nothing ran, down to the CPU',
+  'server.autoAttempt': 'attempt',
+  'server.autoRunning': 'Answered with the settings written.',
+  'server.autoNotRunning':
+    'Every arrangement tried failed, the CPU included. The last one is written; the reasons are above.',
   'server.noRuntime': 'Install a runtime first.',
   'server.noModels': 'Add a model folder first.',
   'server.strays':
@@ -408,6 +417,15 @@ export const ru: Record<StringKey, string> = {
   'server.autoThreads': 'потоков',
   'server.autoWontFit':
     'На этой машине ничего не помещается свободно; это самый скромный вариант, а вердикт ниже говорит почему.',
+  'server.autoPhase.loading': 'загрузка',
+  'server.autoPhase.probing': 'прошу токен',
+  'server.autoPhase.failed': 'не вышло',
+  'server.autoPhase.ok': 'ответила',
+  'server.autoPhase.gave-up': 'не запустилось ничего, включая CPU',
+  'server.autoAttempt': 'попытка',
+  'server.autoRunning': 'Ответила с записанными параметрами.',
+  'server.autoNotRunning':
+    'Ни один вариант не запустился, включая CPU. Последний записан; причины выше.',
   'server.noRuntime': 'Сначала установите рантайм.',
   'server.noModels': 'Сначала добавьте папку с моделями.',
   'server.strays':

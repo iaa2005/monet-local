@@ -17,6 +17,7 @@ import { useT } from '@/stores/uiStore'
 import type {
   Activity,
   AutoProfileResult,
+  AutoProgress,
   EndpointInfo,
   ModelInfo,
   ProfilesFile,
@@ -50,6 +51,8 @@ export function Server(): JSX.Element {
   const [autoNote, setAutoNote] = useState<AutoProfileResult | null>(null)
   /** The model Auto is working on, so its row can say so. */
   const [autoBusy, setAutoBusy] = useState<string | null>(null)
+  /** Auto's attempts so far, as main reports them — cleared by the result. */
+  const [autoProgress, setAutoProgress] = useState<AutoProgress[]>([])
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState('')
@@ -107,6 +110,9 @@ export function Server(): JSX.Element {
     const off = [
       api()?.server.onStatus(setStatus),
       api()?.server.onActivity(setActivity),
+      api()?.server.onAutoProgress((p) =>
+        setAutoProgress((prev) => [...prev, p]),
+      ),
     ]
     return () => {
       for (const f of off) f?.()
@@ -191,8 +197,13 @@ export function Server(): JSX.Element {
    */
   const autoLoad = async (modelId: string): Promise<void> => {
     setAutoBusy(modelId)
+    setAutoNote(null)
+    setAutoProgress([])
     try {
       await guard(async () => {
+        // Main does the whole loop — write, restart, load, ask for a token,
+        // back off, again — and reports each attempt on the way. This side
+        // only shows it.
         const r = await api()!.profiles.auto(modelId)
         setAutoNote(r)
         setProfiles(r.file)
@@ -200,17 +211,6 @@ export function Server(): JSX.Element {
         // changes. An edit in place keeps the key, so force it.
         loadedFor.current = null
         setSelected(modelId)
-        // Written, shown, and NOT loaded: the smallest arrangement did not
-        // fit, and starting it anyway would only turn the verdict into a
-        // crash a minute later. The note says what is in the way.
-        if (r.summary.level === 'wont_fit') return
-        if (status?.state === 'ready') await api()!.server.apply()
-        else await api()!.server.start()
-        const now = await api()!.server.status()
-        const isLoaded = now.models.some(
-          (m) => m.id === modelId && m.status === 'loaded',
-        )
-        if (!isLoaded) await api()!.server.load(modelId)
       })
     } finally {
       setAutoBusy(null)
@@ -495,6 +495,9 @@ export function Server(): JSX.Element {
         )}
       </Section>
 
+      {autoBusy && autoProgress.length ? (
+        <AutoLive steps={autoProgress} />
+      ) : null}
       {autoNote ? (
         <AutoNote r={autoNote} onClose={() => setAutoNote(null)} />
       ) : null}
@@ -682,6 +685,34 @@ function count(n: number): string {
  * verdict colour is the estimator's, and a refusal is said here rather than
  * left to be discovered when the server will not start.
  */
+/** "58/65 layers on the GPU" or "CPU only" — the part that changes between attempts. */
+function attemptLabel(s: AutoProfileResult['summary'], t: ReturnType<typeof useT>): string {
+  if (s.cpuOnly) return t('server.autoCpu')
+  if (s.gpuLayers) return `${s.gpuLayers.on}/${s.gpuLayers.of} ${t('server.autoLayers')}`
+  return t(`server.autoKv.${s.kv}` as StringKey)
+}
+
+/** The attempt in flight, as main narrates it. */
+function AutoLive({ steps }: { steps: AutoProgress[] }): JSX.Element {
+  const t = useT()
+  const last = steps[steps.length - 1]!
+  return (
+    <div className="mt-3 rounded-lg border border-brand-edge bg-brand-wash px-3 py-2 text-sm">
+      <span className="font-medium">
+        {t('server.autoAttempt')} {last.attempt}: {attemptLabel(last.summary, t)}
+      </span>
+      <span className="text-muted-foreground"> — {t(`server.autoPhase.${last.phase}` as StringKey)}</span>
+      {steps
+        .filter((p) => p.phase === 'failed')
+        .map((p) => (
+          <div key={p.attempt} className="text-xs text-muted-foreground">
+            {p.attempt}. {attemptLabel(p.summary, t)} — {p.reason}
+          </div>
+        ))}
+    </div>
+  )
+}
+
 function AutoNote({
   r,
   onClose,
@@ -719,6 +750,20 @@ function AutoNote({
       <span className="text-muted-foreground">{parts.join(' · ')}</span>
       {s.level === 'wont_fit' ? (
         <span className="basis-full text-xs">{t('server.autoWontFit')}</span>
+      ) : null}
+      {r.attempts.length ? (
+        // Every arrangement tried, and how it ended. "58 of 65 died, 48
+        // ran" is the whole finding on hardware whose wall moves.
+        <ol className="basis-full text-xs">
+          {r.attempts.map((a, i) => (
+            <li key={i} className={a.ok ? 'text-green-text' : 'text-muted-foreground'}>
+              {i + 1}. {attemptLabel(a.summary, t)} — {a.ok ? t('server.autoPhase.ok') : a.reason ?? t('server.autoPhase.failed')}
+            </li>
+          ))}
+          <li className={cn('mt-1', r.running ? 'text-green-text' : 'text-red-text')}>
+            {r.running ? t('server.autoRunning') : t('server.autoNotRunning')}
+          </li>
+        </ol>
       ) : null}
       <div className="flex-1" />
       <button

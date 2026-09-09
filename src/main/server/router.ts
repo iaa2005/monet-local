@@ -404,6 +404,10 @@ export class Router {
     const deadline = Date.now() + timeoutMs
     let moved = false
     while (Date.now() < deadline) {
+      // A child that died on the way up marks the router failed (see the
+      // FAILURE lines). Waiting the rest of the timeout out for a model
+      // that has already said why it will not load is not patience.
+      if (this.stateValue === 'failed') throw new Error(this.lastError)
       const v = (await this.status()).models.find((m) => m.id === model)?.status
       if (v === want) return
       // `loading` is the only transitional value llama.cpp reports; an
@@ -507,6 +511,16 @@ export class Router {
    */
   load(model: string): Promise<void> {
     return this.command('/models/load', model)
+  }
+
+  /**
+   * Load, and stay until it is loaded or has failed. What Auto needs: the
+   * verdict on a candidate is whether the weights came up, and that answer
+   * arrives minutes after the router's 200.
+   */
+  async loadAndWait(model: string, timeoutMs = 300_000): Promise<void> {
+    await this.load(model)
+    await this.settle(model, 'loaded', timeoutMs)
   }
 
   /**

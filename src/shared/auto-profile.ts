@@ -117,6 +117,66 @@ function placements(cpuOnly: boolean): KvPlacement[] {
     : ['device-f16', 'device-quantised', 'ram-f16', 'ram-quantised']
 }
 
+/**
+ * The shares of layers to try on a shared-memory GPU, in order, after the
+ * first one failed. Each step is a quarter fewer than the last; the list
+ * ends at the CPU, which cannot run out of device memory because it has
+ * none.
+ */
+const UMA_BACKOFF = [0.75, 0.6, 0.45, 0.3] as const
+
+/**
+ * What to try next, after a candidate loaded and then died — or would not
+ * load at all.
+ *
+ * This is the half of Auto that is measured rather than estimated. Nothing
+ * here predicts the device wall, because on this hardware it cannot be
+ * predicted: a 13.4 GiB offload crashed where a 15.8 GiB one ran, the same
+ * evening. What CAN be done is to try, watch, and back off — fewer layers
+ * on the GPU each time, and finally none. The context is left alone: it was
+ * chosen against RAM, and RAM is not what a device-memory failure is about.
+ *
+ * Null when there is nothing left to try: the CPU-only arrangement failed
+ * too, and that is not a memory problem this can walk around.
+ */
+export function backOff(
+  current: AutoResult,
+  geometry: ModelGeometry | undefined,
+): AutoResult | null {
+  const { profile, summary } = current
+  if (summary.cpuOnly) return null
+  const blocks = geometry?.blockCount
+  const on = typeof profile['nGpuLayers'] === 'number' ? profile['nGpuLayers'] : undefined
+  // Unknown layer count, or a discrete card that had every layer: the only
+  // step down is the CPU.
+  const nextShare =
+    blocks && on !== undefined
+      ? UMA_BACKOFF.find((s) => Math.floor(blocks * s) < on)
+      : undefined
+  if (nextShare === undefined || !blocks) {
+    const cpu: Profile = { ...profile, device: 'none' }
+    delete cpu['nGpuLayers']
+    // The cache had a device to live on; it does not any more.
+    if (!summary.kv.startsWith('ram')) cpu['noKvOffload'] = true
+    return {
+      profile: cpu,
+      estimate: current.estimate,
+      summary: {
+        ...summary,
+        cpuOnly: true,
+        kv: summary.kv.endsWith('quantised') ? 'ram-quantised' : 'ram-f16',
+        gpuLayers: undefined,
+      },
+    }
+  }
+  const fewer = Math.max(1, Math.floor(blocks * nextShare))
+  return {
+    profile: { ...profile, nGpuLayers: fewer },
+    estimate: current.estimate,
+    summary: { ...summary, gpuLayers: { on: fewer, of: blocks } },
+  }
+}
+
 export function recommendProfile(input: AutoInput): AutoResult {
   const { hardware, geometry } = input
   const device = hardware.devices[0]

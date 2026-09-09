@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { recommendProfile, type AutoInput } from './auto-profile.js'
+import { backOff, recommendProfile, type AutoInput } from './auto-profile.js'
 import { estimate } from './estimator.js'
 import type { Hardware } from './flags/types.js'
 import type { ModelGeometry } from './models/geometry.js'
@@ -138,6 +138,41 @@ describe('what auto picks on the machine it was calibrated on', () => {
     const busy = recommendProfile(on({ hardware: { ...MACHINE, freeRamBytes: 20.6e9 } }))
     expect(busy.summary.ctxSize).toBeLessThan(idle.summary.ctxSize)
     expect(busy.summary.level).not.toBe('wont_fit')
+  })
+
+  it('backs off a quarter of the layers at a time, then to the CPU, then gives up', () => {
+    // Measured rather than predicted: the device wall on this hardware
+    // moved between 13.4 and 15.8 GiB the same evening, so Auto tries,
+    // watches, and steps down.
+    let r = recommendProfile(on({ fileBytes: IQ4_XS }))
+    const seen: (number | 'cpu')[] = []
+    for (let i = 0; i < 10; i++) {
+      seen.push(r.summary.cpuOnly ? 'cpu' : r.summary.gpuLayers!.on)
+      const next = backOff(r, QWEN)
+      if (!next) break
+      r = next
+    }
+    expect(seen).toEqual([58, 48, 39, 29, 19, 'cpu'])
+    expect(backOff(r, QWEN)).toBeNull()
+  })
+
+  it('moves the cache to RAM when it falls back to the CPU', () => {
+    // A cache "on the device" with --device none is a contradiction llama.cpp
+    // resolves by ignoring it; say what will actually happen instead.
+    const first = recommendProfile(on({ fileBytes: IQ4_XS, contextMax: 8192 }))
+    let r = first
+    for (;;) {
+      const next = backOff(r, QWEN)
+      if (!next) break
+      r = next
+    }
+    expect(r.profile['device']).toBe('none')
+    expect(r.profile['nGpuLayers']).toBeUndefined()
+    expect(r.profile['noKvOffload']).toBe(true)
+    expect(r.summary.kv.startsWith('ram')).toBe(true)
+    // And the context it was chosen with is untouched: RAM is not what a
+    // device failure is about.
+    expect(r.profile['ctxSize']).toBe(first.profile['ctxSize'])
   })
 
   it('does not set a reasoning effort — the client asks per request now', () => {
