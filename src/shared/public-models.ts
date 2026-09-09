@@ -9,6 +9,7 @@
  */
 
 import { estimate } from './estimator.js'
+import { FLAGS } from './flags/registry.js'
 import type { Hardware, Profile } from './flags/types.js'
 import type { ModelGeometry } from './models/geometry.js'
 
@@ -55,6 +56,17 @@ export interface PublicModel {
    * never been told about.
    */
   predict_configured: number | null
+  /**
+   * The reasoning-effort steps this server accepts, weakest first.
+   *
+   * Published because a client cannot know them and must not guess: the set
+   * is neither universal nor the same size everywhere — llama.cpp takes four
+   * (low…xhigh) and has no "minimal" or "max", while an OpenAI-compatible
+   * cloud takes a different four and Anthropic has none at all, only a token
+   * budget. A client that hardcodes one ladder offers steps that do nothing
+   * on half the models it can reach.
+   */
+  effort_levels: string[]
   modalities: ('text' | 'image')[]
   moe: boolean
   /** Whether this machine could run it as configured. */
@@ -79,6 +91,11 @@ export function publicModels(
     // -1 is llama.cpp's "until the context runs out". There is no number to
     // publish for that, and null is how this shape says "no limit set".
     const predict = profile['nPredict']
+    // Straight from the flag's own definition — the same list the profile
+    // screen offers — so the two cannot drift.
+    const effortFlag = FLAGS['reasoningEffort']
+    const effortLevels =
+      effortFlag?.type === 'enum' ? effortFlag.options.map((o) => o.value) : []
     return {
       id: m.id,
       object: 'model',
@@ -91,6 +108,7 @@ export function publicModels(
       context_max: m.contextMax ?? null,
       context_configured: typeof ctx === 'number' ? ctx : null,
       predict_configured: typeof predict === 'number' && predict > 0 ? predict : null,
+      effort_levels: effortLevels,
       modalities: m.mmprojPath ? ['text', 'image'] : ['text'],
       moe: m.moe,
       verdict: verdict.level,

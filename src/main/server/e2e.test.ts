@@ -218,6 +218,7 @@ describe.skipIf(!enabled)('end to end, through the gateway', () => {
       'context_max',
       'context_configured',
       'predict_configured',
+      'effort_levels',
       'modalities',
       'verdict',
     ]) {

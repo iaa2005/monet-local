@@ -11,6 +11,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { publicModels, type PublicModelInput } from './public-models.js'
+import { FLAGS } from './flags/registry.js'
 import type { Hardware, Profile } from './flags/types.js'
 
 const MODEL: PublicModelInput = {
@@ -54,6 +55,22 @@ describe('what a client is told about a model', () => {
 
   it('says null when the profile sets no limit at all', () => {
     expect(published({ ctxSize: 8192 })['predict_configured']).toBeNull()
+  })
+
+  it('publishes the effort steps this server accepts, weakest first', () => {
+    // A client cannot know them and must not guess: llama.cpp takes four and
+    // has neither "minimal" nor "max", which is exactly the shape a
+    // hardcoded ladder gets wrong.
+    const levels = published({ ctxSize: 8192 })['effort_levels'] as string[]
+    expect(levels).toEqual(['low', 'medium', 'high', 'xhigh'])
+  })
+
+  it('takes them from the flag definition, not a second copy of the list', () => {
+    // The profile screen offers the flag's own options. Two lists would
+    // drift, and the drift would be invisible until a step did nothing.
+    const flag = FLAGS['reasoningEffort']
+    const fromFlag = flag?.type === 'enum' ? flag.options.map((o) => o.value) : []
+    expect(published({})['effort_levels']).toEqual(fromFlag)
   })
 
   it('still describes a model whose profile is empty', () => {
