@@ -20,6 +20,7 @@
  */
 
 import { createServer, request, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { exitMessage } from './instance-exit.js'
 import type { Router } from './router.js'
 
 export interface GatewayDeps {
@@ -201,6 +202,24 @@ export class Gateway {
         // say where the action is rather than leaving the client to guess.
         if (up.statusCode === 400) {
           headers['x-monet-local'] = 'load the model in Monet Local'
+        }
+        // The router answers 500 "proxy error: Could not establish
+        // connection" when a model's own server has died — which is true and
+        // useless. We watched it die and know what killed it, so say that
+        // instead. Only for this one shape: everything else is passed
+        // through byte for byte, streaming included.
+        const crash = up.statusCode === 500 ? router.lastCrash() : undefined
+        if (crash) {
+          up.resume()
+          json(res, 503, {
+            error: {
+              message: exitMessage(crash),
+              type: 'model_crashed',
+              model: crash.id,
+              code: crash.code,
+            },
+          })
+          return
         }
         res.writeHead(up.statusCode ?? 502, headers)
         up.pipe(res)

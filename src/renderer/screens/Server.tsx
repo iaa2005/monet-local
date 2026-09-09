@@ -212,6 +212,10 @@ export function Server(): JSX.Element {
       .filter((m) => m.status === 'loading')
       .map((m) => m.id),
   )
+  // A child server that faults leaves the ROUTER healthy — it keeps
+  // answering and keeps listing — so nothing on this screen said anything at
+  // all, and the client got a 500 naming nothing. See instance-exit.ts.
+  const died = (status?.models ?? []).filter((m) => m.lastExit)
 
   return (
     <Page>
@@ -290,6 +294,16 @@ export function Server(): JSX.Element {
           {status.error}
         </p>
       ) : null}
+
+      {died.map((m) => (
+        <p
+          key={`died-${m.id}`}
+          className="mt-3 rounded-lg bg-red-bg px-3 py-2 text-sm text-red-text"
+        >
+          {t('server.died')} <b>{m.id}</b> — {m.lastExit!.label}.{' '}
+          {m.lastExit!.crashed ? t('server.diedHint') : null}
+        </p>
+      ))}
 
       {error ? (
         <p className="mt-3 rounded-lg bg-red-bg px-3 py-2 text-sm text-red-text">

@@ -12,9 +12,13 @@ let upstream: Server
 const UPSTREAM_PORT = 17182
 const GATEWAY_PORT = 17181
 
+/** Set by the crash test; the real Router fills this from the log it watches. */
+let crash: { id: string; code: number; label: string; crashed: boolean; at: number } | undefined
+
 const routerStub = {
   state: 'ready',
   port: UPSTREAM_PORT,
+  lastCrash: () => crash,
   status: async () => ({
     state: 'ready' as const,
     port: UPSTREAM_PORT,
@@ -50,6 +54,17 @@ beforeAll(async () => {
           res.end('data: [DONE]\n\n')
         }
       }, 40)
+      return
+    }
+    if (req.url === '/v1/dead') {
+      // Word for word what llama.cpp's router answers once a model's own
+      // server has died under it.
+      res.writeHead(500, { 'content-type': 'application/json' })
+      res.end(
+        JSON.stringify({
+          error: { message: 'proxy error: Could not establish connection' },
+        }),
+      )
       return
     }
     if (req.url === '/v1/messages') {
@@ -117,6 +132,36 @@ describe('gateway — the OpenAI and Anthropic side', () => {
     // Buffering would collapse this to one read and turn a model that types
     // into one that pauses and then dumps.
     expect(reads.length).toBeGreaterThan(1)
+  })
+
+  it('answers a dead model with what killed it, not "could not connect"', async () => {
+    // The whole point. The router's own 500 is true and useless; we watched
+    // the child die and know the model, the fault and the fix.
+    crash = {
+      id: 'qwen3.8-27b-ud-iq4_xs',
+      code: -1073741819,
+      label: 'access violation (0xC0000005)',
+      crashed: true,
+      at: Date.now(),
+    }
+    const res = await fetch(url('/v1/dead'), { method: 'POST' })
+    const body = (await res.json()) as {
+      error: { message: string; type: string; model: string }
+    }
+    expect(res.status).toBe(503)
+    expect(body.error.type).toBe('model_crashed')
+    expect(body.error.model).toBe('qwen3.8-27b-ud-iq4_xs')
+    expect(body.error.message).toContain('access violation')
+    expect(body.error.message).not.toContain('Could not establish')
+  })
+
+  it('leaves an ordinary 500 alone when nothing died', async () => {
+    // Rewriting every 500 would hide real errors behind a stale diagnosis.
+    crash = undefined
+    const res = await fetch(url('/v1/dead'), { method: 'POST' })
+    const body = (await res.json()) as { error: { message: string } }
+    expect(res.status).toBe(500)
+    expect(body.error.message).toContain('Could not establish connection')
   })
 
   it('tells a client where to act when a model is not loaded', async () => {

@@ -32,11 +32,23 @@ describe.skipIf(!haveModels)('scanFolders on the real library', () => {
     expect(models.some((m) => m.fileName.startsWith('mmproj'))).toBe(false)
   })
 
-  it('descends into the per-repository subfolder LM Studio creates', () => {
-    const { models } = scanFolders([MODELS])
-    // Qwen3.8-27B-GGUF/ holds the Q4_K_M; the loose UD- quants sit at the top.
-    expect(models.some((m) => m.path.includes('Qwen3.8-27B-GGUF'))).toBe(true)
-    expect(models.some((m) => m.fileName.includes('UD-IQ4_XS'))).toBe(true)
+  it('walks both the top of the folder and the repository subfolders', () => {
+    // LM Studio puts each repository in its own subfolder; a file downloaded
+    // by hand lands at the top. A scan that only walks one level passes half
+    // of this and fails the other.
+    //
+    // Asserted over models AND failures, as shapes rather than file names.
+    // It used to name the two quants that happened to be on this disk, and
+    // moving one of them to another drive turned a scanning test red for a
+    // reason that had nothing to do with scanning. A truncated download at
+    // the top of the folder is still proof the top was walked — that is what
+    // `failures` is for.
+    const { models, failures } = scanFolders([MODELS])
+    const depth = (p: string): number =>
+      p.slice(MODELS.length).split(/[/\\]/).filter(Boolean).length
+    const seen = [...models.map((m) => m.path), ...failures.map((f) => f.path)]
+    expect(seen.some((p) => depth(p) === 1), 'something at the top').toBe(true)
+    expect(seen.some((p) => depth(p) > 1), 'something a level down').toBe(true)
   })
 
   it('pairs a model with the projector beside it', () => {

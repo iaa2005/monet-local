@@ -111,6 +111,9 @@ export const en = {
   'server.state.failed': 'Failed',
   'server.address': 'Address',
   'server.loaded': 'Loaded',
+  'server.died': 'This model’s own server stopped:',
+  'server.diedHint':
+    'It is no longer loaded. A fault like this is usually every layer going to the GPU — try setting “Layers on the GPU” a little below the model’s layer count, then start the server again.',
   'server.act.ready': 'Ready',
   'server.act.prompt': 'Reading prompt',
   'server.act.generating': 'Generating',
@@ -355,6 +358,9 @@ export const ru: Record<StringKey, string> = {
   'server.state.failed': 'Не запустился',
   'server.address': 'Адрес',
   'server.loaded': 'Загружено',
+  'server.died': 'Собственный сервер этой модели остановился:',
+  'server.diedHint':
+    'Она больше не загружена. Такой сбой обычно означает, что на видеокарту ушли все слои — попробуйте задать «Слоёв на видеокарте» немного меньше числа слоёв модели и запустить сервер заново.',
   'server.act.ready': 'Готово',
   'server.act.prompt': 'Обработка промпта',
   'server.act.generating': 'Генерация',

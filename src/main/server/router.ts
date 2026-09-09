@@ -24,6 +24,7 @@ import { buildIni } from '@shared/flags/build.js'
 import type { Profile } from '@shared/flags/types.js'
 import { dataDir, logsDir } from '../app/settings-store.js'
 import { readSlots, tick, type Activity, type Rate } from './activity.js'
+import { parseInstanceExit, type InstanceExit } from './instance-exit.js'
 
 export type { Activity } from './activity.js'
 
@@ -39,6 +40,14 @@ export interface RouterModel {
   status: 'unloaded' | 'loading' | 'loaded'
   /** The exact command llama.cpp built for the child, when it has one. */
   args?: string[]
+  /**
+   * How this model's own server last died, if it did.
+   *
+   * A child that faults leaves the ROUTER healthy: it keeps listing, keeps
+   * answering, and forwards the next request to a port with nobody behind
+   * it. Nothing anywhere said what had happened — see instance-exit.ts.
+   */
+  lastExit?: InstanceExit & { at: number }
 }
 
 export interface RouterEntry {
@@ -86,6 +95,8 @@ export class Router {
   >()
   /** Last known status, so the fast tick knows what to ask about. */
   private lastModels: RouterModel[] = []
+  /** How each model's child server last died, by model id. */
+  private readonly exits = new Map<string, InstanceExit & { at: number }>()
   private readonly rates = new Map<string, Rate>()
   private lastActivity: Record<string, Activity> = {}
   private activityKey = ''
@@ -115,6 +126,20 @@ export class Router {
    */
   get running(): RouterEntry[] {
     return this.startedEntries
+  }
+
+  /**
+   * The most recent child death, if it was recent enough to explain a request
+   * failing right now. Used to answer with the reason instead of the router's
+   * own "Could not establish connection".
+   */
+  lastCrash(withinMs = 120_000): (InstanceExit & { at: number }) | undefined {
+    let best: (InstanceExit & { at: number }) | undefined
+    for (const e of this.exits.values()) {
+      if (Date.now() - e.at > withinMs) continue
+      if (!best || e.at > best.at) best = e
+    }
+    return best
   }
 
   onChange(cb: (s: RouterStatus) => void): () => void {
@@ -199,6 +224,15 @@ export class Router {
       const text = buf.toString()
       log.write(text)
       if (/listening on/i.test(text)) this.setState('ready')
+      // A child dying is not the router failing, so it must not change the
+      // router's state — it is recorded against the model it belonged to.
+      for (const line of text.split(/\r?\n/)) {
+        const exit = parseInstanceExit(line)
+        if (!exit) continue
+        this.exits.set(exit.id, { ...exit, at: Date.now() })
+        console.error(`[router] ${exit.id} died: ${exit.label}`)
+        void this.announce()
+      }
       for (const re of FAILURE) {
         const m = re.exec(text)
         if (m) this.setState('failed', m[0])
@@ -409,11 +443,18 @@ export class Router {
       const body = (await res.json()) as {
         data?: { id: string; status?: { value?: string; args?: string[] } }[]
       }
-      base.models = (body.data ?? []).map((m) => ({
-        id: m.id,
-        status: (m.status?.value as RouterModel['status']) ?? 'unloaded',
-        ...(m.status?.args ? { args: m.status.args } : {}),
-      }))
+      base.models = (body.data ?? []).map((m) => {
+        const exit = this.exits.get(m.id)
+        const status = (m.status?.value as RouterModel['status']) ?? 'unloaded'
+        // A death is only worth reporting while it still explains the
+        // present. Once the model is loaded again it is history.
+        return {
+          id: m.id,
+          status,
+          ...(m.status?.args ? { args: m.status.args } : {}),
+          ...(exit && status !== 'loaded' ? { lastExit: exit } : {}),
+        }
+      })
     } catch {
       // Ready but not answering yet; an empty list is the honest answer.
     }
