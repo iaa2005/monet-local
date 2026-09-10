@@ -84,6 +84,22 @@ describe('what auto picks on the machine it was calibrated on', () => {
     expect(r.profile['device']).toBeUndefined()
   })
 
+  it('gives a model with room to spare the WHOLE GPU', () => {
+    // Measured: gpt-oss-20b, 12.1 GB of weights in an 18 GiB heap, runs at 26
+    // tok/s with all 24 layers offloaded. Holding a tenth of them back — the
+    // rule written for the model that crashed — would cost speed for nothing.
+    const r = recommendProfile(on({ fileBytes: 12.11e9, geometry: { ...QWEN, blockCount: 24 } }))
+    expect(r.profile['nGpuLayers']).toBeUndefined()
+    expect(r.summary.gpuLayers).toBeUndefined()
+  })
+
+  it('and still holds layers back on one that fills the heap', () => {
+    // The 27B: 14.25 GB against the same 18 GiB, and every layer offloaded
+    // died on the first generated token.
+    const r = recommendProfile(on({ fileBytes: IQ4_XS }))
+    expect(r.profile['nGpuLayers']).toBe(58)
+  })
+
   it('gives a discrete card every layer', () => {
     const discrete: Hardware = {
       totalRamBytes: MACHINE.totalRamBytes,

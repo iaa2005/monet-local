@@ -4,6 +4,12 @@ import type { Estimate } from '@shared/estimator.js'
 import type { StringKey } from '@shared/i18n.js'
 import type { Hardware, Profile } from '@shared/flags/types.js'
 import { bytes } from '@shared/format.js'
+import {
+  activeWeightBytes,
+  formatTps,
+  generationTps,
+  speedBand,
+} from '@shared/models/speed.js'
 import { Button } from '@/components/ui/button'
 import { Badge, Card, ClickRow, Empty, Page, PageHeader, Section, Stat } from '@/components/ui/page'
 import { ProfilePanel } from '@/components/ProfilePanel'
@@ -235,6 +241,32 @@ export function Server(): JSX.Element {
    * the panel stop where reality does rather than at a registry bound that
    * has to hold everywhere.
    */
+  /**
+   * How fast each model would WRITE here.
+   *
+   * Bandwidth divided by what one token reads — see @shared/models/speed.
+   * It is in the list rather than behind a click because it is the fact that
+   * decides which model to load, and nothing on this screen said it: a 13 GiB
+   * file and an 11 GiB file sat side by side, and the smaller one is seven
+   * times faster because it is a mixture of experts.
+   */
+  const speedOf = useCallback(
+    (m: ModelInfo) => {
+      const bandwidth = hardware.memoryBandwidthBytesPerSecond
+      if (!bandwidth || !m.weightBytes) return null
+      const input = {
+        weightBytes: m.weightBytes,
+        ...(m.expertBytes ? { expertBytes: m.expertBytes } : {}),
+        ...(m.expertCount ? { expertCount: m.expertCount } : {}),
+        ...(m.expertUsedCount ? { expertUsedCount: m.expertUsedCount } : {}),
+        bandwidthBytesPerSecond: bandwidth,
+      }
+      const tps = generationTps(input)
+      return { tps, band: speedBand(tps), activeBytes: activeWeightBytes(input), bandwidth }
+    },
+    [hardware.memoryBandwidthBytesPerSecond],
+  )
+
   const chosen = models.find((m) => m.id === selected)
   const effective = {
     ...(chosen?.mmprojPath ? { mmprojPath: chosen.mmprojPath } : {}),
@@ -425,6 +457,7 @@ export function Server(): JSX.Element {
                 <span className="text-sm font-medium">{m.displayName}</span>
                 <Badge tone="brand">{m.quant}</Badge>
                 <Badge>{bytes(m.sizeBytes, 1)}</Badge>
+                <Speed s={speedOf(m)} />
                 {loaded.has(m.id) ? (
                   // Until the first slot poll lands the honest thing to say
                   // is that the weights are in memory; a second later it
@@ -675,6 +708,34 @@ export function Server(): JSX.Element {
 /** A live count, grouped so four digits do not read as one number. */
 function count(n: number): string {
   return n.toLocaleString('en-US')
+}
+
+/**
+ * What this model would write at, per second.
+ *
+ * Predicted, not measured, and it does not pretend otherwise — the tooltip
+ * shows the whole arithmetic, because "≈26 tok/s" is only trustworthy if the
+ * reader can check where it came from. Generation on a machine like this is
+ * memory bandwidth divided by the weights a token reads; there is nothing
+ * else in it.
+ */
+function Speed({
+  s,
+}: {
+  s: { tps: number; band: 'fast' | 'usable' | 'slow'; activeBytes: number; bandwidth: number } | null
+}): JSX.Element | null {
+  const t = useT()
+  if (!s) return null
+  const why =
+    `${t('server.speedTitle')}: ${t(`server.speed.${s.band}` as StringKey)}
+` +
+    `${t('server.speedWhy')} ${bytes(s.activeBytes, 1)}; ` +
+    `${t('server.speedBandwidth')} ${bytes(s.bandwidth, 0)}/s`
+  return (
+    <Badge tone={s.band === 'fast' ? 'ok' : s.band === 'usable' ? undefined : 'warn'} title={why}>
+      ≈{formatTps(s.tps)}
+    </Badge>
+  )
 }
 
 /**

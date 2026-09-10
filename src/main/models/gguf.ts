@@ -27,12 +27,65 @@ const MAX_HEADER = 256 * 1024 * 1024
 
 export type GgufValue = string | number | boolean | GgufValue[] | { skipped: number }
 
+/**
+ * Bytes per BLOCK and elements per block, by ggml type.
+ *
+ * Needed to weigh the tensor table: a tensor's size is not its element count
+ * — a Q4_K value is 4.5 bits, MXFP4 is 4.25 with a shared scale. The table is
+ * llama.cpp's own (ggml.c, type_traits), and an unknown type is left at zero
+ * rather than guessed: a wrong number here would be a wrong speed estimate
+ * with nothing to say it was invented.
+ */
+const GGML_TYPE: Record<number, { blockBytes: number; blockElems: number }> = {
+  0: { blockBytes: 4, blockElems: 1 }, // F32
+  1: { blockBytes: 2, blockElems: 1 }, // F16
+  2: { blockBytes: 18, blockElems: 32 }, // Q4_0
+  3: { blockBytes: 20, blockElems: 32 }, // Q4_1
+  6: { blockBytes: 22, blockElems: 32 }, // Q5_0
+  7: { blockBytes: 24, blockElems: 32 }, // Q5_1
+  8: { blockBytes: 34, blockElems: 32 }, // Q8_0
+  9: { blockBytes: 36, blockElems: 32 }, // Q8_1
+  10: { blockBytes: 84, blockElems: 256 }, // Q2_K
+  11: { blockBytes: 110, blockElems: 256 }, // Q3_K
+  12: { blockBytes: 144, blockElems: 256 }, // Q4_K
+  13: { blockBytes: 176, blockElems: 256 }, // Q5_K
+  14: { blockBytes: 210, blockElems: 256 }, // Q6_K
+  15: { blockBytes: 292, blockElems: 256 }, // Q8_K
+  16: { blockBytes: 66, blockElems: 256 }, // IQ2_XXS
+  17: { blockBytes: 74, blockElems: 256 }, // IQ2_XS
+  18: { blockBytes: 98, blockElems: 256 }, // IQ3_XXS
+  19: { blockBytes: 50, blockElems: 256 }, // IQ1_S
+  20: { blockBytes: 18, blockElems: 32 }, // IQ4_NL
+  21: { blockBytes: 110, blockElems: 256 }, // IQ3_S
+  22: { blockBytes: 82, blockElems: 256 }, // IQ2_S
+  23: { blockBytes: 136, blockElems: 256 }, // IQ4_XS
+  24: { blockBytes: 1, blockElems: 1 }, // I8
+  25: { blockBytes: 2, blockElems: 1 }, // I16
+  26: { blockBytes: 4, blockElems: 1 }, // I32
+  27: { blockBytes: 8, blockElems: 1 }, // I64
+  28: { blockBytes: 8, blockElems: 1 }, // F64
+  29: { blockBytes: 56, blockElems: 256 }, // IQ1_M
+  30: { blockBytes: 2, blockElems: 1 }, // BF16
+  39: { blockBytes: 17, blockElems: 32 }, // MXFP4
+}
+
 export interface GgufHeader {
   version: number
   tensorCount: number
   kv: Record<string, GgufValue>
   /** Tensor names only — enough to tell MoE from dense, and cheap to hold. */
   tensorNames: string[]
+  /** Every weight in the file, in bytes. */
+  weightBytes: number
+  /**
+   * Of those, the ones held in EXPERT tensors (`ffn_*_exps`).
+   *
+   * The split is what makes a mixture of experts fast: a dense model reads
+   * every weight for every token, an MoE reads the shared part plus the few
+   * experts its router picked. Measured on this machine, that is the
+   * difference between 4 tokens a second and 26 — see @shared/models/speed.
+   */
+  expertBytes: number
   fileSize: number
 }
 
@@ -256,11 +309,18 @@ export function readGgufHeader(path: string): GgufHeader {
     // head, which no metadata key states outright.
     const tensorNames: string[] = []
     let lastOffset = 0
+    let weightBytes = 0
+    let expertBytes = 0
     for (let i = 0; i < tensorCount; i++) {
-      tensorNames.push(r.str())
+      const name = r.str()
+      tensorNames.push(name)
       const dims = r.u32()
-      r.skip(8 * dims) // shape
-      r.skip(4) // ggml type
+      let elems = 1
+      for (let d = 0; d < dims; d++) elems *= r.u64()
+      const type = GGML_TYPE[r.u32()]
+      const bytes = type ? (elems / type.blockElems) * type.blockBytes : 0
+      weightBytes += bytes
+      if (name.includes('_exps')) expertBytes += bytes
       lastOffset = Math.max(lastOffset, r.u64())
     }
 
@@ -274,7 +334,7 @@ export function readGgufHeader(path: string): GgufHeader {
       throw new TruncatedGgufError(fileSize, needBytes)
     }
 
-    return { version, tensorCount, kv, tensorNames, fileSize }
+    return { version, tensorCount, kv, tensorNames, weightBytes, expertBytes, fileSize }
   } finally {
     closeSync(fd)
   }

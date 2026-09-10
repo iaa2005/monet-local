@@ -88,6 +88,18 @@ const LADDER = [262144, 131072, 65536, 32768, 16384, 8192, 4096] as const
 const UMA_LAYER_SHARE = 0.9
 
 /**
+ * How full the shared heap has to be before layers are held back at all.
+ *
+ * The rule above was written from one crash and applied to everything, which
+ * cost speed on models that were never near the wall: measured with
+ * llama-bench, gpt-oss-20b runs at 26 tok/s with all 24 layers on the GPU and
+ * fills two thirds of the heap doing it. The 27B that crashed filled three
+ * quarters. So the cap is for models close to the edge, and everything with
+ * room to spare gets the whole GPU.
+ */
+const UMA_CAP_ABOVE = 0.7
+
+/**
  * The physical batch. Measured on the same machine as irrelevant to prompt
  * speed between 128 and 512, and the smallest of those is the one that
  * leaves the most device memory for the cache.
@@ -266,10 +278,15 @@ export function recommendProfile(input: AutoInput): AutoResult {
   }
   if (cpuOnly) base['device'] = 'none'
 
-  // The measured rule above. Only when the layer count is known: a cap
+  // The measured rule above, and only for a model that comes close to the
+  // wall — see UMA_CAP_ABOVE. Only when the layer count is known, too: a cap
   // invented without one would be a number, not a rule.
+  const wouldFill =
+    device && device.totalBytes > 0
+      ? (input.fileBytes + (input.mmprojBytes ?? 0)) / device.totalBytes
+      : 0
   let gpuLayers: AutoSummary['gpuLayers']
-  if (device?.uma && geometry?.blockCount) {
+  if (device?.uma && geometry?.blockCount && wouldFill > UMA_CAP_ABOVE) {
     const of = geometry.blockCount
     const on = Math.max(1, Math.floor(of * UMA_LAYER_SHARE))
     base['nGpuLayers'] = on

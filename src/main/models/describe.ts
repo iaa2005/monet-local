@@ -29,6 +29,14 @@ export interface ModelInfo {
   /** Mixture of experts, and how many. */
   moe: boolean
   expertCount?: number
+  /** Experts the router picks per token — the other half of what makes an
+   * MoE fast. Without it the expert bytes cannot be discounted. */
+  expertUsedCount?: number
+  /** Every weight in the file, from the tensor table. Close to the file size
+   * but not equal to it: the header and the vocabulary are not weights. */
+  weightBytes?: number
+  /** Of those, the ones in expert tensors. Zero on a dense model. */
+  expertBytes?: number
   /** Carries a multi-token-prediction head (`blk.N.nextn.*`). */
   mtp: boolean
   /** Paired `mmproj-*.gguf` in the same folder, if any. */
@@ -160,6 +168,7 @@ export function describeModel(
       : undefined
 
   const expertCount = num(kv, `${arch}.expert_count`)
+  const expertUsedCount = num(kv, `${arch}.expert_used_count`)
   // Two independent signals, because neither is universal: the metadata key,
   // and expert tensors. A model with `ffn_gate_exps` blocks is MoE whatever
   // its header claims.
@@ -192,6 +201,9 @@ export function describeModel(
       : {}),
     moe: hasExpertTensors || (expertCount ?? 0) > 0,
     ...(expertCount !== undefined ? { expertCount } : {}),
+    ...(expertUsedCount !== undefined ? { expertUsedCount } : {}),
+    weightBytes: header.weightBytes,
+    expertBytes: header.expertBytes,
     mtp:
       num(kv, `${arch}.nextn_predict_layers`) !== undefined ||
       header.tensorNames.some((n) => n.includes('.nextn.')),

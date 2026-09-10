@@ -24,6 +24,7 @@ import { readSettings } from '../app/settings-store.js'
 import { scanFolders } from '../models/library.js'
 import type { ModelInfo } from '../models/describe.js'
 import { listInstalled, pickDefault } from '../runtimes/manager.js'
+import { memorySpeed, memorySpeedNow } from '../app/memory-speed.js'
 import { findStrays, killStray, ownedRssBytes } from '../server/orphans.js'
 import { Gateway } from '../server/gateway.js'
 import { Router, type RouterEntry } from '../server/router.js'
@@ -87,13 +88,17 @@ export function hardware(): Hardware {
     // A machine with a browser and a chat client open still has less to
     // give than its total minus a fixed reserve; that part stays.
     freeRamBytes: freemem() + ownRssBytes,
+    memoryBandwidthBytesPerSecond: memorySpeedNow().bytesPerSecond,
+    memoryBandwidthMeasured: memorySpeedNow().measured,
     devices: activePack()?.devices ?? [],
   }
 }
 
-/** hardware(), with the own-server figure measured rather than remembered. */
+/** hardware(), with the measured figures refreshed rather than remembered. */
 export async function hardwareNow(): Promise<Hardware> {
   ownRssBytes = await ownedRssBytes(ownPids())
+  // Reads the modules once per process and is cached after; see memory-speed.
+  await memorySpeed()
   return hardware()
 }
 

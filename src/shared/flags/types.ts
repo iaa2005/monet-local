@@ -33,6 +33,15 @@ export interface Hardware {
    * the estimator for why the fixed reserve alone was not enough.
    */
   freeRamBytes?: number
+  /**
+   * Memory bandwidth, bytes per second — read from the modules where the
+   * firmware says, assumed otherwise (`memoryBandwidthMeasured`).
+   *
+   * Generation speed is this number divided by what a token reads, and
+   * nothing else. See @shared/models/speed.
+   */
+  memoryBandwidthBytesPerSecond?: number
+  memoryBandwidthMeasured?: boolean
   devices: {
     id: string
     name: string
