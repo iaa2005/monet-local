@@ -10,6 +10,7 @@
 
 import { estimate } from './estimator.js'
 import { FLAGS } from './flags/registry.js'
+import { activeWeightBytes, generationTps } from './models/speed.js'
 import type { Hardware, Profile } from './flags/types.js'
 import type { ModelGeometry } from './models/geometry.js'
 
@@ -26,6 +27,12 @@ export interface PublicModelInput {
   geometry?: ModelGeometry
   mmprojPath?: string
   moe: boolean
+  /** Every weight in the file, from the tensor table. */
+  weightBytes?: number
+  /** Of those, the ones in expert tensors — zero on a dense model. */
+  expertBytes?: number
+  expertCount?: number
+  expertUsedCount?: number
 }
 
 export interface PublicModel {
@@ -67,6 +74,19 @@ export interface PublicModel {
    * on half the models it can reach.
    */
   effort_levels: string[]
+  /**
+   * What ONE token reads, in bytes, and the tokens per second that implies
+   * on this machine.
+   *
+   * Generation is memory bandwidth divided by this and nothing else, so it
+   * is the number that decides whether a model is usable in a chat — and the
+   * one a client cannot work out for itself, because it needs the tensor
+   * table and the machine's memory rate. Measured here: 3.2 GB per token and
+   * 26 tok/s for a mixture of experts, 14.2 GB and 4 tok/s for the larger
+   * dense model beside it. Null when the file could not be weighed.
+   */
+  active_bytes_per_token: number | null
+  generation_tps: number | null
   modalities: ('text' | 'image')[]
   moe: boolean
   /** Whether this machine could run it as configured. */
@@ -96,6 +116,24 @@ export function publicModels(
     const effortFlag = FLAGS['reasoningEffort']
     const effortLevels =
       effortFlag?.type === 'enum' ? effortFlag.options.map((o) => o.value) : []
+
+    // Bandwidth ÷ what a token reads. Both halves have to be known: without
+    // the tensor table there is no active figure, and without the machine's
+    // memory rate there is no speed — and a made-up one would be worse than
+    // none, because a client would show it as fact.
+    const bandwidth = hardware.memoryBandwidthBytesPerSecond
+    const speedInput =
+      m.weightBytes && bandwidth
+        ? {
+            weightBytes: m.weightBytes,
+            ...(m.expertBytes ? { expertBytes: m.expertBytes } : {}),
+            ...(m.expertCount ? { expertCount: m.expertCount } : {}),
+            ...(m.expertUsedCount ? { expertUsedCount: m.expertUsedCount } : {}),
+            bandwidthBytesPerSecond: bandwidth,
+          }
+        : null
+    const active = speedInput ? Math.round(activeWeightBytes(speedInput)) : null
+    const tps = speedInput ? Math.round(generationTps(speedInput) * 10) / 10 : null
     return {
       id: m.id,
       object: 'model',
@@ -109,6 +147,8 @@ export function publicModels(
       context_configured: typeof ctx === 'number' ? ctx : null,
       predict_configured: typeof predict === 'number' && predict > 0 ? predict : null,
       effort_levels: effortLevels,
+      active_bytes_per_token: active,
+      generation_tps: tps,
       modalities: m.mmprojPath ? ['text', 'image'] : ['text'],
       moe: m.moe,
       verdict: verdict.level,

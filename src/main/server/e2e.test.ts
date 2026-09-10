@@ -219,6 +219,8 @@ describe.skipIf(!enabled)('end to end, through the gateway', () => {
       'context_configured',
       'predict_configured',
       'effort_levels',
+      'active_bytes_per_token',
+      'generation_tps',
       'modalities',
       'verdict',
     ]) {

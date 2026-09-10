@@ -73,6 +73,53 @@ describe('what a client is told about a model', () => {
     expect(published({})['effort_levels']).toEqual(fromFlag)
   })
 
+  it('publishes what a token reads, and the speed that implies', () => {
+    // The finding this exists for, measured with llama-bench on this
+    // machine: the mixture of experts reads 3.2 GB per token and writes at
+    // 26 tok/s; the bigger dense model beside it reads 14.2 GB and writes at
+    // 4. A client cannot work that out — it needs the tensor table and the
+    // machine's memory rate.
+    const moe = publicModels(
+      [
+        {
+          ...MODEL,
+          sizeBytes: 12.11e9,
+          weightBytes: 12.11e9,
+          expertBytes: 10.18e9,
+          expertCount: 32,
+          expertUsedCount: 4,
+          moe: true,
+        },
+      ],
+      new Map(),
+      () => ({}),
+      { ...HARDWARE, memoryBandwidthBytesPerSecond: 89.6e9 },
+    )[0] as unknown as Record<string, number>
+    expect(moe!['active_bytes_per_token']! / 1e9).toBeCloseTo(3.19, 1)
+    expect(moe['generation_tps']).toBeGreaterThan(18)
+
+    const dense = publicModels(
+      [{ ...MODEL, weightBytes: 14.25e9 }],
+      new Map(),
+      () => ({}),
+      { ...HARDWARE, memoryBandwidthBytesPerSecond: 89.6e9 },
+    )[0] as unknown as Record<string, number>
+    expect(dense['active_bytes_per_token']).toBe(14.25e9)
+    expect(dense['generation_tps']).toBeLessThan(6)
+  })
+
+  it('says null rather than guessing when either half is missing', () => {
+    // No tensor table, or no memory rate: a made-up figure would be shown to
+    // someone as a fact.
+    const noRate = published({}) as unknown as Record<string, unknown>
+    expect(noRate['generation_tps']).toBeNull()
+    const noWeights = publicModels([MODEL], new Map(), () => ({}), {
+      ...HARDWARE,
+      memoryBandwidthBytesPerSecond: 89.6e9,
+    })[0] as unknown as Record<string, unknown>
+    expect(noWeights['generation_tps']).toBeNull()
+  })
+
   it('still describes a model whose profile is empty', () => {
     const m = published({})
     expect(m['context_configured']).toBeNull()
