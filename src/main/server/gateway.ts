@@ -226,7 +226,16 @@ export class Gateway {
       },
     )
     upstream.on('error', (err) => {
+      if (res.headersSent || res.destroyed) return
       json(res, 502, { error: { message: `router: ${err.message}` } })
+    })
+    // The client hung up — Stop was pressed, the window closed. Without this
+    // the router's side of the conversation stayed open and the model went
+    // on generating to the end of its answer for nobody: pipes carry bytes
+    // one way, and a closed downstream does not close the upstream by
+    // itself. Destroying the request is what llama.cpp reads as "stop".
+    res.on('close', () => {
+      if (!res.writableFinished) upstream.destroy()
     })
     req.pipe(upstream)
   }

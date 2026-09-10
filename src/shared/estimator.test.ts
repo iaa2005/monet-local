@@ -157,6 +157,18 @@ describe('estimate — the machine as it is right now', () => {
     expect(live.findings.map((f) => f.code)).toContain('ram-in-use')
   })
 
+  it('says how the ceiling was arrived at, in the parts a person can check', () => {
+    const busy: Hardware = { ...MACHINE, freeRamBytes: 20.6e9 }
+    const live = estimate({ ...base({ ...COMMON, ctxSize: 8192 }), hardware: busy })
+    expect(live.ramBudget.othersBytes).toBeCloseTo(MACHINE.totalRamBytes - 20.6e9, -6)
+    expect(live.ramBudget.reserveBytes).toBe(2 * 1024 ** 3)
+    expect(live.ramCeiling).toBeCloseTo(20.6e9 - 2 * 1024 ** 3, -6)
+    // Idle: the fixed reserve, and no "others" figure to show.
+    const idle = estimate(base({ ...COMMON, ctxSize: 8192 }))
+    expect(idle.ramBudget.othersBytes).toBeUndefined()
+    expect(idle.ramBudget.reserveBytes).toBe(3 * 1024 ** 3)
+  })
+
   it('changes nothing when nobody measured', () => {
     const p: Profile = { ...COMMON, ctxSize: 8192 }
     expect(estimate(base(p)).ramCeiling).toBe(

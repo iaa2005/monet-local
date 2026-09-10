@@ -190,6 +190,8 @@ export const en = {
   'verdict.gpuShort': 'GPU',
   'verdict.gpu': 'GPU',
   'verdict.free': 'free',
+  'verdict.others': 'other programs',
+  'verdict.reserve': 'kept back',
   'verdict.overBy': 'over by',
   'verdict.ceilingHint':
     'Two ceilings, and a configuration has to clear both: everything must fit in RAM, and whatever is offloaded must fit in what the GPU will allocate.',
@@ -467,6 +469,8 @@ export const ru: Record<StringKey, string> = {
   'verdict.gpuShort': 'Видео',
   'verdict.gpu': 'Видеокарта',
   'verdict.free': 'свободно',
+  'verdict.others': 'другие программы',
+  'verdict.reserve': 'запас',
   'verdict.overBy': 'превышение на',
   'verdict.ceilingHint':
     'Потолка два, и конфигурация должна пройти оба: всё должно поместиться в оперативную память, а то, что уходит на видеокарту, — в то, что она согласится выделить.',

@@ -112,6 +112,20 @@ export interface Estimate {
   computeBytes: number
   totalBytes: number
   ramCeiling: number
+  /**
+   * How the RAM ceiling was arrived at, so the bar can say it in words.
+   *
+   * "18.8 GiB" on its own reads as a mystery on a 28 GB machine. The parts
+   * are what make it an arithmetic anyone can check against the task
+   * manager: the total, what other programs are holding right now (absent
+   * when nobody measured), and the margin kept back.
+   */
+  ramBudget: {
+    totalBytes: number
+    /** Held by everything that is not this app's own model server. */
+    othersBytes?: number
+    reserveBytes: number
+  }
   headroomBytes: number
   /** The GPU allocator's own limit, when a device is in play. */
   deviceCeiling?: number
@@ -182,6 +196,16 @@ export function estimate(input: EstimateInput): Estimate {
       : undefined
   const ramCeiling =
     liveCeiling !== undefined ? Math.min(fixedCeiling, liveCeiling) : fixedCeiling
+  // Which of the two ceilings applied decides which reserve is shown: the
+  // idle reserve when the machine is idle, the live margin when it is not.
+  const ramBudget: Estimate['ramBudget'] =
+    liveCeiling !== undefined && liveCeiling < fixedCeiling
+      ? {
+          totalBytes: hw.totalRamBytes,
+          othersBytes: Math.max(0, hw.totalRamBytes - (hw.freeRamBytes ?? hw.totalRamBytes)),
+          reserveBytes: LIVE_MARGIN,
+        }
+      : { totalBytes: hw.totalRamBytes, reserveBytes: OS_RESERVE }
   const headroomBytes = ramCeiling - totalBytes
 
   const findings: Finding[] = []
@@ -281,6 +305,7 @@ export function estimate(input: EstimateInput): Estimate {
     computeBytes: compute,
     totalBytes,
     ramCeiling,
+    ramBudget,
     headroomBytes,
     ...(deviceCeiling !== undefined ? { deviceCeiling } : {}),
     ...(deviceBytes !== undefined ? { deviceBytes } : {}),

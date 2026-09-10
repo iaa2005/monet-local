@@ -23,6 +23,8 @@ interface Budget {
   short: string
   parts: Part[]
   ceiling: number
+  /** The ceiling spelled out as a sum, shown under the bar. */
+  arithmetic?: string
 }
 
 /**
@@ -132,6 +134,17 @@ export function Verdict({
       label: t('verdict.ram'),
       short: t('verdict.ramShort'),
       ceiling: e.ramCeiling,
+      // The ceiling in words, under the bar: total, minus what other
+      // programs hold, minus the margin. Without it "18.8 GiB" on a 28 GB
+      // machine reads as the app hitting air.
+      arithmetic: [
+        bytes(e.ramBudget.totalBytes, 1),
+        ...(e.ramBudget.othersBytes !== undefined
+          ? [`− ${bytes(e.ramBudget.othersBytes, 1)} ${t('verdict.others')}`]
+          : []),
+        `− ${bytes(e.ramBudget.reserveBytes, 1)} ${t('verdict.reserve')}`,
+        `= ${bytes(e.ramCeiling, 1)}`,
+      ].join(' '),
       parts: [
         { label: t('verdict.weights'), value: e.weightsBytes, className: WEIGHTS },
         { label: t('verdict.kv'), value: e.kvBytes, className: KV },
@@ -343,6 +356,11 @@ function Meter({ budget }: { budget: Budget }): JSX.Element {
         </span>
       </div>
       <StackedBar className="mt-1.5" parts={budget.parts} total={budget.ceiling} />
+      {budget.arithmetic ? (
+        <div className="mt-1 text-right text-[11px] tabular-nums text-muted-foreground">
+          {budget.arithmetic}
+        </div>
+      ) : null}
     </div>
   )
 }

@@ -30,6 +30,8 @@ const routerStub = {
 } as unknown as Router
 
 let apiKey: string | undefined
+/** Set when the stub upstream noticed the gateway dropping its request. */
+let upstreamSawHangup = false
 
 const gateway = new Gateway(GATEWAY_PORT, {
   router: () => routerStub,
@@ -54,6 +56,16 @@ beforeAll(async () => {
           res.end('data: [DONE]\n\n')
         }
       }, 40)
+      return
+    }
+    if (req.url === '/v1/forever') {
+      // A model that would answer for minutes. The test hangs up on it.
+      res.writeHead(200, { 'content-type': 'text/event-stream' })
+      const timer = setInterval(() => res.write('data: {"n":1}\n\n'), 20)
+      req.on('close', () => {
+        clearInterval(timer)
+        upstreamSawHangup = true
+      })
       return
     }
     if (req.url === '/v1/dead') {
@@ -162,6 +174,19 @@ describe('gateway — the OpenAI and Anthropic side', () => {
     const body = (await res.json()) as { error: { message: string } }
     expect(res.status).toBe(500)
     expect(body.error.message).toContain('Could not establish connection')
+  })
+
+  it('hangs up on the router when the client hangs up — Stop must stop the model', async () => {
+    // Reported: Stop pressed, the model kept generating. The gateway piped
+    // bytes downstream and never told the router the reader had gone.
+    upstreamSawHangup = false
+    const ac = new AbortController()
+    const res = await fetch(url('/v1/forever'), { method: 'POST', signal: ac.signal })
+    const reader = res.body!.getReader()
+    await reader.read()
+    ac.abort()
+    await new Promise((r) => setTimeout(r, 150))
+    expect(upstreamSawHangup).toBe(true)
   })
 
   it('tells a client where to act when a model is not loaded', async () => {
