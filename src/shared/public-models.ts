@@ -177,7 +177,13 @@ export function publicModels(
       effort_levels: effortLevels,
       active_bytes_per_token: active,
       generation_tps: tps,
-      modalities: m.mmprojPath ? ['text', 'image'] : ['text'],
+      // Sight is a property of the RUNNING server, not of the folder: a
+      // model loaded without its projector (to make room, say) answers an
+      // image with a 500, and a client told "image" would send one.
+      modalities:
+        (args ? args.includes('--mmproj') && !args.includes('--no-mmproj') : !!m.mmprojPath)
+          ? ['text', 'image']
+          : ['text'],
       moe: m.moe,
       verdict: verdict.level,
     }

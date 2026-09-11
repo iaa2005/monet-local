@@ -149,6 +149,21 @@ describe('what a client is told about a model', () => {
     expect(noWeights['generation_tps']).toBeNull()
   })
 
+  it('says a model can see only while its projector is loaded', () => {
+    // The folder has an mmproj, the running server was started without it
+    // — the user cleared it to fit a bigger context. An image sent now is
+    // a 500 "image input is not supported"; the client has to know first.
+    const withProj = { ...MODEL, mmprojPath: 'D:/mmproj.gguf' }
+    const loaded = (args: string[]) =>
+      publicModels([withProj], new Map([[MODEL.id, 'loaded' as const]]), () => ({}), HARDWARE, () => args)[0]!
+    expect(loaded(['--model', 'D:/m.gguf']).modalities).toEqual(['text'])
+    expect(loaded(['--model', 'D:/m.gguf', '--mmproj', 'D:/mmproj.gguf']).modalities).toEqual(['text', 'image'])
+    expect(loaded(['--model', 'D:/m.gguf', '--mmproj', 'D:/mmproj.gguf', '--no-mmproj']).modalities).toEqual(['text'])
+    // Not loaded: the folder is all there is to go on.
+    const [idle] = publicModels([withProj], new Map(), () => ({}), HARDWARE)
+    expect(idle!.modalities).toEqual(['text', 'image'])
+  })
+
   it('still describes a model whose profile is empty', () => {
     const m = published({})
     expect(m['context_configured']).toBeNull()
