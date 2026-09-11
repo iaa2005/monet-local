@@ -74,6 +74,48 @@ async function readWindows(): Promise<MemorySpeed | null> {
   }
 }
 
+/**
+ * Apple silicon: the bandwidth is a property of the chip, and Apple states
+ * it. No module to read, no channel count that means anything — the number
+ * itself is the fact, so it is looked up by the chip's name.
+ *
+ * Figures as Apple publishes them, in GB/s. A chip not in the table gets
+ * the fallback, labelled as such, rather than a neighbour's number.
+ */
+const APPLE_BANDWIDTH_GBPS: [RegExp, number][] = [
+  [/\bM1 Ultra\b/, 800],
+  [/\bM1 Max\b/, 400],
+  [/\bM1 Pro\b/, 200],
+  [/\bM1\b/, 68.25],
+  [/\bM2 Ultra\b/, 800],
+  [/\bM2 Max\b/, 400],
+  [/\bM2 Pro\b/, 200],
+  [/\bM2\b/, 100],
+  [/\bM3 Ultra\b/, 800],
+  [/\bM3 Max\b/, 300],
+  [/\bM3 Pro\b/, 150],
+  [/\bM3\b/, 100],
+  [/\bM4 Max\b/, 410],
+  [/\bM4 Pro\b/, 273],
+  [/\bM4\b/, 120],
+  [/\bM5\b/, 153],
+]
+
+export function appleBandwidth(brand: string): number | null {
+  const hit = APPLE_BANDWIDTH_GBPS.find(([re]) => re.test(brand))
+  return hit ? hit[1] * 1e9 : null
+}
+
+async function readDarwin(): Promise<MemorySpeed | null> {
+  const { stdout } = await run('sysctl -n machdep.cpu.brand_string')
+  const bytesPerSecond = appleBandwidth(stdout.trim())
+  if (bytesPerSecond === null) return null
+  // LPDDR5 on one wide bus: expressed as "one channel at the rate that
+  // gives this bandwidth", so the rest of the app can keep dividing by
+  // 8 bytes × MT/s without a special case.
+  return { mtPerSecond: Math.round(bytesPerSecond / 8 / 1e6), channels: 1, bytesPerSecond, measured: true }
+}
+
 /** Linux: dmidecode needs root, so this reads what a user can read. */
 async function readLinux(): Promise<MemorySpeed | null> {
   const { stdout } = await run('lscpu 2>/dev/null || true')
@@ -88,9 +130,11 @@ export async function memorySpeed(): Promise<MemorySpeed> {
     const read =
       process.platform === 'win32'
         ? await readWindows()
-        : process.platform === 'linux'
-          ? await readLinux()
-          : null
+        : process.platform === 'darwin'
+          ? await readDarwin()
+          : process.platform === 'linux'
+            ? await readLinux()
+            : null
     cached = read ?? FALLBACK
   } catch {
     cached = FALLBACK

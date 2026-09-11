@@ -9,7 +9,9 @@
  * `ggml-org/llama.cpp` names its Windows assets
  * `llama-<build>-bin-win-<backend>-<arch>.zip`; the CUDA packs need a second
  * archive carrying the CUDA runtime DLLs, named `cudart-llama-bin-win-…`
- * with no build number in it.
+ * with no build number in it. macOS and Linux ship as tarballs:
+ * `llama-<build>-bin-macos-<arch>.tar.gz`, `…-bin-ubuntu-<backend>-<arch>.tar.gz`
+ * — the manager extracts either shape flat.
  */
 
 export type BackendId =
@@ -21,6 +23,10 @@ export type BackendId =
   | 'sycl'
   | 'openvino'
   | 'opencl-adreno'
+  | 'metal'
+  | 'cpu-mac'
+  | 'vulkan-linux'
+  | 'cpu-linux'
   | 'custom'
 
 export interface BackendSpec {
@@ -140,6 +146,51 @@ export const BACKENDS: BackendSpec[] = [
       en: 'Snapdragon laptops.',
       ru: 'Ноутбуки на Snapdragon.',
     },
+  },
+  // ── macOS ──────────────────────────────────────────────────────────────
+  // One build per architecture: llama.cpp's macOS tarball carries Metal on
+  // Apple silicon and the CPU backend on Intel. Nothing to choose between,
+  // so nothing to explain.
+  {
+    id: 'metal',
+    label: 'Metal (Apple silicon)',
+    asset: 'llama-{build}-bin-macos-arm64.tar.gz',
+    platform: 'darwin',
+    arch: 'arm64',
+    bundled: true,
+    untested: true,
+    note: {
+      en: 'The GPU and the CPU share the whole of the memory; every layer fits on the device.',
+      ru: 'Видеокарта и процессор делят всю память; каждый слой помещается на устройство.',
+    },
+  },
+  {
+    id: 'cpu-mac',
+    label: 'CPU (Intel Mac)',
+    asset: 'llama-{build}-bin-macos-x64.tar.gz',
+    platform: 'darwin',
+    arch: 'x64',
+    bundled: true,
+    untested: true,
+  },
+  // ── Linux ──────────────────────────────────────────────────────────────
+  {
+    id: 'vulkan-linux',
+    label: 'Vulkan',
+    asset: 'llama-{build}-bin-ubuntu-vulkan-x64.tar.gz',
+    platform: 'linux',
+    arch: 'x64',
+    bundled: true,
+    untested: true,
+  },
+  {
+    id: 'cpu-linux',
+    label: 'CPU',
+    asset: 'llama-{build}-bin-ubuntu-x64.tar.gz',
+    platform: 'linux',
+    arch: 'x64',
+    bundled: true,
+    untested: true,
   },
 ]
 

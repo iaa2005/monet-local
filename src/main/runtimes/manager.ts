@@ -12,7 +12,7 @@
  */
 
 import { spawn } from 'node:child_process'
-import {
+import { chmodSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -21,7 +21,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { basename, join } from 'node:path'
-import { unzipSync } from 'fflate'
+import { gunzipSync, unzipSync } from 'fflate'
 import type { BackendId } from '@shared/runtimes/catalog.js'
 import { backendById, type BackendSpec } from '@shared/runtimes/catalog.js'
 import { parseDevices, type Device } from '@shared/runtimes/devices.js'
@@ -155,16 +155,68 @@ async function download(
  * Extract a llama.cpp archive FLAT.
  *
  * The Windows zips put everything at the root, but some builds nest one
- * folder deep; either way the binaries must end up beside their DLLs, so
- * paths are collapsed to their basename rather than preserved.
+ * folder deep; the macOS and Linux tarballs nest under `build/bin/`. Either
+ * way the binaries must end up beside their libraries, so paths are
+ * collapsed to their basename rather than preserved.
+ *
+ * A tarball is told by its bytes (gzip's 1f 8b), not its name: the name is
+ * whatever the release called it, and a renamed download is still a tarball.
+ * File modes come from the tar header — without them `llama-server` lands
+ * on disk unrunnable, and nothing on macOS says why beyond EACCES.
  */
-function extractFlat(zip: Uint8Array, dir: string): void {
-  const files = unzipSync(zip)
+export function extractFlat(archive: Uint8Array, dir: string): void {
   mkdirSync(dir, { recursive: true })
-  for (const [name, data] of Object.entries(files)) {
+  const entries: { name: string; data: Uint8Array; mode?: number }[] =
+    archive[0] === 0x1f && archive[1] === 0x8b
+      ? untar(gunzipSync(archive))
+      : Object.entries(unzipSync(archive)).map(([name, data]) => ({ name, data }))
+  for (const { name, data, mode } of entries) {
     if (name.endsWith('/') || data.length === 0) continue
-    writeFileSync(join(dir, basename(name)), data)
+    const target = join(dir, basename(name))
+    writeFileSync(target, data)
+    if (process.platform !== 'win32') {
+      // Executable if the tar said so, or if it has no extension at all —
+      // a zip carries no mode, and `llama-server` is exactly that.
+      const exec = mode !== undefined ? (mode & 0o111) !== 0 : !/\.[a-z0-9]+$/i.test(basename(name))
+      chmodSync(target, exec ? 0o755 : 0o644)
+    }
   }
+}
+
+/**
+ * The files in a tar stream — ustar with GNU long names, which is what
+ * `tar czf` writes on the CI machines llama.cpp releases from. Directories,
+ * links and pax records are skipped; nothing in a runtime pack is one.
+ */
+export function untar(buf: Uint8Array): { name: string; data: Uint8Array; mode: number }[] {
+  const out: { name: string; data: Uint8Array; mode: number }[] = []
+  const text = new TextDecoder()
+  const field = (at: number, len: number): string => {
+    const s = text.decode(buf.subarray(at, at + len))
+    const nul = s.indexOf('\0')
+    return (nul >= 0 ? s.slice(0, nul) : s).trim()
+  }
+  let off = 0
+  let longName: string | null = null
+  while (off + 512 <= buf.length) {
+    if (buf.subarray(off, off + 512).every((b) => b === 0)) break
+    const name = field(off, 100)
+    const mode = parseInt(field(off + 100, 8) || '0', 8)
+    const size = parseInt(field(off + 124, 12) || '0', 8)
+    const type = String.fromCharCode(buf[off + 156] ?? 0)
+    const prefix = field(off + 345, 155)
+    const dataStart = off + 512
+    const data = buf.subarray(dataStart, dataStart + size)
+    off = dataStart + Math.ceil(size / 512) * 512
+    if (type === 'L') {
+      longName = field(dataStart, size)
+      continue
+    }
+    const full = longName ?? (prefix ? `${prefix}/${name}` : name)
+    longName = null
+    if (type === '0' || type === '\0' || type === '') out.push({ name: full, data, mode })
+  }
+  return out
 }
 
 export interface InstallProgress {

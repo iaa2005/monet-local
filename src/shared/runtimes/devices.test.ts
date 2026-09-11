@@ -48,6 +48,17 @@ describe('parseDevices', () => {
     expect(d[0]?.uma).toBeUndefined()
   })
 
+  it('knows Metal is unified memory without being told', () => {
+    // llama-bench on a Mac prints the device and no `uma` banner line. The
+    // GPU's memory IS the RAM there; counting it twice would promise a
+    // 32 GB laptop 64.
+    const [d] = parseDevices(`Available devices:
+  MTL0: Apple M2 Pro (32768 MiB, 32768 MiB free)`)
+    expect(d?.id).toBe('MTL0')
+    expect(d?.uma).toBe(true)
+    expect(d?.totalBytes).toBe(32768 * 1024 * 1024)
+  })
+
   it('reports nothing usable when a pack finds no hardware', () => {
     const cpuOnly = `load_backend: loaded CPU backend from ggml-cpu.dll
 Available devices:`

@@ -63,17 +63,40 @@ describe('packsIn', () => {
     )
   })
 
-  it('offers nothing for a platform the catalog has no rows for', () => {
+  it('offers the macOS and Linux tarballs to the machines they are for', () => {
+    // The recorded release predates the rows; a release with the tarballs
+    // llama.cpp ships today (b10909's names) is what a Mac would see.
+    const tag = 'b10909'
+    const withTarballs: Release = {
+      tag_name: tag,
+      assets: [
+        `llama-${tag}-bin-macos-arm64.tar.gz`,
+        `llama-${tag}-bin-macos-x64.tar.gz`,
+        `llama-${tag}-bin-ubuntu-vulkan-x64.tar.gz`,
+        `llama-${tag}-bin-ubuntu-x64.tar.gz`,
+        `llama-${tag}-bin-win-vulkan-x64.zip`,
+      ].map((name) => ({ name, size: 1, browser_download_url: `https://x/${name}` })),
+    }
+    const ids = (p: string, a: string): string[] =>
+      packsIn(withTarballs, backendsFor(p as NodeJS.Platform, a)).map((x) => x.backend.id)
+    expect(ids('darwin', 'arm64')).toEqual(['metal'])
+    expect(ids('darwin', 'x64')).toEqual(['cpu-mac'])
+    expect(ids('linux', 'x64')).toEqual(['vulkan-linux', 'cpu-linux'])
+    // And a release without them offers a Mac nothing, rather than a zip.
     expect(packsIn(release, backendsFor('darwin', 'arm64'))).toEqual([])
   })
 })
 
 describe('catalog', () => {
-  it('bundles exactly the two packs that must work offline', () => {
-    expect(BACKENDS.filter((b) => b.bundled).map((b) => b.id)).toEqual([
-      'vulkan',
-      'cpu',
-    ])
+  it('bundles exactly the packs that must work offline, per platform', () => {
+    const bundled = (p: string, a: string): string[] =>
+      backendsFor(p as NodeJS.Platform, a)
+        .filter((b) => b.bundled)
+        .map((b) => b.id)
+    expect(bundled('win32', 'x64')).toEqual(['vulkan', 'cpu'])
+    expect(bundled('darwin', 'arm64')).toEqual(['metal'])
+    expect(bundled('darwin', 'x64')).toEqual(['cpu-mac'])
+    expect(bundled('linux', 'x64')).toEqual(['vulkan-linux', 'cpu-linux'])
   })
 
   it('marks every pack no one here can test', () => {
@@ -87,6 +110,13 @@ describe('catalog', () => {
       'sycl',
       'openvino',
       'opencl-adreno',
+      // Nobody on the project has a Mac or a Linux box either — the rows
+      // are there so the builds have something to download, and the badge
+      // says the path is unproven.
+      'metal',
+      'cpu-mac',
+      'vulkan-linux',
+      'cpu-linux',
     ])
   })
 })

@@ -50,7 +50,11 @@ export function parseDevices(output: string): Device[] {
     const m = DEVICE_LINE.exec(line)
     if (!m) continue
     const [, backend = '', index = '0', name = '', total = '0', free = '0'] = m
-    const known = uma.get(name)
+    // Metal prints no `uma` line, and does not need to: Apple silicon has
+    // one memory for the GPU and the CPU, always. Leaving it undefined
+    // would have the estimator add the device's memory on top of the RAM
+    // it is.
+    const known = uma.get(name) ?? (backend === 'MTL' ? true : undefined)
     devices.push({
       id: `${backend}${index}`,
       backend,
