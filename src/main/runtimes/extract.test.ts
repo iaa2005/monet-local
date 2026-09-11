@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -21,6 +21,8 @@ function makeTarball(): Uint8Array {
   dirs.push(root)
   mkdirSync(join(root, 'build', 'bin'), { recursive: true })
   writeFileSync(join(root, 'build', 'bin', 'llama-server'), '#!/bin/sh\necho hi\n')
+  // As llama.cpp's own tarball has it: the binary is executable in the tar.
+  if (process.platform !== 'win32') chmodSync(join(root, 'build', 'bin', 'llama-server'), 0o755)
   writeFileSync(join(root, 'build', 'bin', 'libllama.dylib'), Buffer.alloc(1500, 7))
   writeFileSync(join(root, 'build', 'LICENSE'), 'MIT')
   // Relative paths on purpose: GNU tar reads `C:\...` as a remote host.
@@ -49,6 +51,8 @@ describe('runtime tarballs', () => {
     if (process.platform !== 'win32') {
       // The mode survives: this is what lets the server start on a Mac.
       expect(statSync(join(dir, 'llama-server')).mode & 0o111).not.toBe(0)
+      // A library is data, not a program.
+      expect(statSync(join(dir, 'libllama.dylib')).mode & 0o111).toBe(0)
     }
   })
 })
