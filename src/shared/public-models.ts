@@ -93,11 +93,36 @@ export interface PublicModel {
   verdict: 'fits' | 'tight' | 'wont_fit'
 }
 
+/**
+ * The value after a flag in a command line llama.cpp reports for a loaded
+ * model, e.g. `--ctx-size 8192`. Either spelling; the last one wins, as it
+ * does for llama.cpp itself.
+ */
+export function argValue(args: string[], names: string[]): number | undefined {
+  let found: number | undefined
+  for (let i = 0; i + 1 < args.length; i++) {
+    if (!names.includes(args[i]!)) continue
+    const n = Number(args[i + 1])
+    if (Number.isFinite(n)) found = n
+  }
+  return found
+}
+
 export function publicModels(
   models: PublicModelInput[],
   statuses: Map<string, ModelStatus>,
   profileFor: (id: string) => Profile,
   hardware: Hardware,
+  /**
+   * The command line the model's server is ACTUALLY running with, for a
+   * loaded model. llama.cpp fixes a model's settings when it loads it; a
+   * profile edited afterwards describes the next load, not this one. A
+   * client planning a request against the edited figure walks into the
+   * refusal this shape exists to prevent — seen: profile at 32768, server
+   * at 8192, an 11713-token prompt bounced with "exceeds the available
+   * context size".
+   */
+  runningArgs?: (id: string) => string[] | undefined,
 ): PublicModel[] {
   return models.map((m) => {
     const profile = profileFor(m.id)
@@ -107,10 +132,13 @@ export function publicModels(
       profile,
       hardware,
     })
-    const ctx = profile['ctxSize']
+    const status = statuses.get(m.id) ?? 'unloaded'
+    const args = status === 'loaded' ? runningArgs?.(m.id) : undefined
+    // What is running beats what is written down, whenever the two differ.
+    const ctx = (args && argValue(args, ['--ctx-size', '-c'])) ?? profile['ctxSize']
     // -1 is llama.cpp's "until the context runs out". There is no number to
     // publish for that, and null is how this shape says "no limit set".
-    const predict = profile['nPredict']
+    const predict = (args && argValue(args, ['--n-predict', '-n'])) ?? profile['nPredict']
     // Straight from the flag's own definition — the same list the profile
     // screen offers — so the two cannot drift.
     const effortFlag = FLAGS['reasoningEffort']
@@ -138,7 +166,7 @@ export function publicModels(
       id: m.id,
       object: 'model',
       owned_by: 'monet-local',
-      status: statuses.get(m.id) ?? 'unloaded',
+      status,
       display_name: m.displayName,
       architecture: m.architecture,
       quantisation: m.quant,

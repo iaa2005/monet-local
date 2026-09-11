@@ -61,6 +61,7 @@ function publicModelList(): unknown[] {
     byId,
     (id) => profileFor(id).values,
     hardware(),
+    (id) => statusCache?.models.find((m) => m.id === id)?.args,
   )
 }
 

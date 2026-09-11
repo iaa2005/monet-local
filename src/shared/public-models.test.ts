@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { publicModels, type PublicModelInput } from './public-models.js'
+import { argValue, publicModels, type PublicModelInput } from './public-models.js'
 import { FLAGS } from './flags/registry.js'
 import type { Hardware, Profile } from './flags/types.js'
 
@@ -38,6 +38,35 @@ describe('what a client is told about a model', () => {
     const m = published({ ctxSize: 8192 })
     expect(m['context_max']).toBe(262144)
     expect(m['context_configured']).toBe(8192)
+  })
+
+  it('publishes the RUNNING context when the profile has moved on', () => {
+    // llama.cpp reads a model's settings once, when it loads it. The user
+    // loaded at 8192, then raised the profile to 32768 without applying;
+    // Code Monet read 32768, budgeted for it, and an 11713-token prompt was
+    // refused by a server that still had 8192. What is running is the truth
+    // for a loaded model; the profile is the truth for an unloaded one.
+    const args = ['--model', 'D:/m.gguf', '--ctx-size', '8192', '--n-predict', '4096']
+    const [loaded] = publicModels(
+      [MODEL],
+      new Map([[MODEL.id, 'loaded' as const]]),
+      () => ({ ctxSize: 32768, nPredict: 16384 }),
+      HARDWARE,
+      () => args,
+    )
+    expect(loaded!.context_configured).toBe(8192)
+    expect(loaded!.predict_configured).toBe(4096)
+    const [unloaded] = publicModels(
+      [MODEL],
+      new Map(),
+      () => ({ ctxSize: 32768, nPredict: 16384 }),
+      HARDWARE,
+      () => args,
+    )
+    expect(unloaded!.context_configured).toBe(32768)
+    // Short spellings count, and the last one wins, as in llama.cpp.
+    expect(argValue(['-c', '4096', '--ctx-size', '2048'], ['--ctx-size', '-c'])).toBe(2048)
+    expect(argValue(['--model', 'x'], ['--ctx-size', '-c'])).toBeUndefined()
   })
 
   it('publishes the answer limit, because the caller sets max_tokens', () => {
