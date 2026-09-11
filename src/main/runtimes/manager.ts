@@ -175,9 +175,11 @@ export function extractFlat(archive: Uint8Array, dir: string): void {
     const target = join(dir, basename(name))
     writeFileSync(target, data)
     if (process.platform !== 'win32') {
-      // Executable if the tar said so, or if it has no extension at all —
-      // a zip carries no mode, and `llama-server` is exactly that.
-      const exec = mode !== undefined ? (mode & 0o111) !== 0 : !/\.[a-z0-9]+$/i.test(basename(name))
+      // Executable if the tar said so, OR if it has no extension at all: a
+      // zip carries no mode, a tarball written on Windows carries none
+      // worth having, and `llama-server` is exactly that kind of name.
+      const exec =
+        (mode !== undefined && (mode & 0o111) !== 0) || !/\.[a-z0-9]+$/i.test(basename(name))
       chmodSync(target, exec ? 0o755 : 0o644)
     }
   }
