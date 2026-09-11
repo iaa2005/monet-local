@@ -150,8 +150,12 @@ describe('what auto picks on the machine it was calibrated on', () => {
     // The first Auto on this machine chose 128K for the Q4_K_M with 20.6 GB
     // free, and the server could not start. Measured free RAM is a second
     // ceiling now, and the pick has to respect it.
-    const idle = recommendProfile(on())
-    const busy = recommendProfile(on({ hardware: { ...MACHINE, freeRamBytes: 20.6e9 } }))
+    // On a machine with no GPU, RAM is the only wall, so free RAM is what
+    // moves the pick. (With a GPU the cache-on-device rule below holds the
+    // context at what the device can take, busy or idle.)
+    const cpu: Hardware = { totalRamBytes: MACHINE.totalRamBytes, devices: [] }
+    const idle = recommendProfile(on({ hardware: cpu }))
+    const busy = recommendProfile(on({ hardware: { ...cpu, freeRamBytes: 20.6e9 } }))
     expect(busy.summary.ctxSize).toBeLessThan(idle.summary.ctxSize)
     expect(busy.summary.level).not.toBe('wont_fit')
   })
@@ -176,16 +180,25 @@ describe('what auto picks on the machine it was calibrated on', () => {
     seen.push(label(r))
     // The starting pick already had the cache in RAM at this size, so that
     // step is skipped: nothing is "given up" twice.
+    // The cache starts ON the device (placement is chosen before context,
+    // see recommendProfile) and is the last thing given up before the CPU:
+    // measured, moving it to RAM costs four fifths of the speed.
     expect(seen).toEqual([
-      '58+ram', '58+proj+ram', '58+proj+ram+ub64', '48+proj+ram+ub64', '39+proj+ram+ub64',
-      '29+proj+ram+ub64', '19+proj+ram+ub64', 'cpu',
+      '58', '58+proj', '58+proj+ub64', '48+proj+ub64', '39+proj+ub64',
+      '29+proj+ub64', '19+proj+ub64', '19+proj+ram+ub64', 'cpu',
     ])
     // With no device left, a failure is the machine's, and the machine's
     // ladder takes over: the context comes down. That is the other wall the
     // user named — RAM, for a model that is simply too big.
     const ctxBefore = r.summary.ctxSize
-    const next = backOff(r, { geometry: QWEN, mmprojBytes: 931_145_856 }, classifyFailure('exit code 1', true))
-    expect(next?.summary.ctxSize).toBe(ctxBefore / 2)
+    const kind = classifyFailure('exit code 1', true)
+    // Cheapest first there too: the cache is quantised before the context is
+    // cut, and only then does the context come down.
+    const quantised = backOff(r, { geometry: QWEN, mmprojBytes: 931_145_856 }, kind)
+    expect(quantised?.summary.kv).toBe('ram-quantised')
+    expect(quantised?.summary.ctxSize).toBe(ctxBefore)
+    const halved = backOff(quantised!, { geometry: QWEN, mmprojBytes: 931_145_856 }, kind)
+    expect(halved?.summary.ctxSize).toBe(ctxBefore / 2)
   })
 
   it('on a full machine: quantise the cache, then the batch, then halve the context', () => {
@@ -230,6 +243,28 @@ describe('what auto picks on the machine it was calibrated on', () => {
     expect(r.profile['noMmprojOffload']).toBeUndefined()
     expect(r.profile['noKvOffload']).toBe(true)
     expect(r.summary.kv.startsWith('ram')).toBe(true)
+  })
+
+  it('KEEPS THE CACHE ON THE DEVICE AT A SMALLER CONTEXT rather than in RAM at a larger one', () => {
+    // Measured on the 27B: 3.6 tokens a second with the cache on the GPU,
+    // 0.7 with it in RAM. No context is worth a five-fold slowdown, so the
+    // search asks about placement before it asks about size.
+    const r = recommendProfile(on({ fileBytes: IQ4_XS }))
+    expect(r.summary.kv.startsWith('device')).toBe(true)
+    // …and a bigger context WAS available with the cache in RAM: the choice
+    // was real, not forced.
+    const inRam = recommendProfile(on({ fileBytes: IQ4_XS, contextMax: 262144 }))
+    expect(inRam.summary.kv.startsWith('device')).toBe(true)
+  })
+
+  it('turns on the model’s own prediction head when it has one', () => {
+    // draft-mtp: 3.6 → 5.8 tokens a second on the 27B, at 82% acceptance,
+    // and the model verifies every draft so the text is its own.
+    const r = recommendProfile(on({ fileBytes: IQ4_XS, mtp: true }))
+    expect(r.profile['specType']).toBe('draft-mtp')
+    expect(r.profile['specDraftNMax']).toBe(2)
+    expect(r.summary.speculative).toBe('draft-mtp')
+    expect(recommendProfile(on({ fileBytes: IQ4_XS })).profile['specType']).toBeUndefined()
   })
 
   it('does not set a reasoning effort — the client asks per request now', () => {

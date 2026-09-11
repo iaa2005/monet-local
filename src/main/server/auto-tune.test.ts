@@ -136,12 +136,19 @@ describe('autoTune — try, watch, back off', () => {
       onProgress: (p) => void progress.push(p),
     })
     const shape = r.attempts.map((a) =>
-      a.summary.cpuOnly ? `cpu@${a.summary.ctxSize / 1024}K` : `${a.summary.gpuLayers?.on}`,
+      a.summary.cpuOnly
+        ? `cpu@${a.summary.ctxSize / 1024}K`
+        : `${a.summary.gpuLayers?.on}${a.summary.kv.startsWith('ram') ? '+ram' : ''}`,
     )
-    // Batch, then layers, then the CPU — and once on the CPU a failure is
-    // the machine's, so the context starts coming down.
-    expect(shape.slice(0, 7)).toEqual(['58', '58', '48', '39', '29', '19', 'cpu@256K'])
-    expect(shape[7]).toBe('cpu@128K')
+    // Batch, then layers, then the cache to RAM (last — it costs four fifths
+    // of the speed), then the CPU; once on the CPU a failure is the machine's,
+    // so the context starts coming down.
+    expect(shape.slice(0, 7)).toEqual(['58', '58', '48', '39', '29', '19', '19+ram'])
+    // Then the CPU, where the machine ladder quantises the cache before it
+    // cuts the context: the same context twice (the label does not show the
+    // cache type), then half of it.
+    const ctx = r.attempts[7]!.summary.ctxSize
+    expect(shape.slice(7)).toEqual([`cpu@${ctx / 1024}K`, `cpu@${ctx / 1024}K`, `cpu@${ctx / 2048}K`])
     expect(r.attempts.every((a) => !a.ok)).toBe(true)
     expect(log).toContain('start ngl=all dev=none')
     expect(progress[progress.length - 1]?.phase).toBe('gave-up')

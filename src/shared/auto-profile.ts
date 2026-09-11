@@ -37,6 +37,15 @@ export interface AutoInput {
   hardware: Hardware
   /** Logical cores. */
   cpuThreads: number
+  /**
+   * The model carries a multi-token-prediction head (`blk.N.nextn.*`).
+   *
+   * Measured on the 27B here: draft-mtp lifts generation from 3.6 to 5.8
+   * tokens a second at 82% acceptance, for the cost of one extra layer's
+   * worth of weights. The one lever in this file that makes a dense model
+   * FASTER rather than merely fitting.
+   */
+  mtp?: boolean
 }
 
 /** Where the cache sits, and how it is stored — the two speed levers. */
@@ -53,6 +62,8 @@ export interface AutoSummary {
   ubatch: number
   /** The multimodal projector was moved off the GPU. */
   projectorOnCpu?: boolean
+  /** Speculative decoding in use, when the model can draft for itself. */
+  speculative?: 'draft-mtp'
   level: VerdictLevel
 }
 
@@ -193,8 +204,8 @@ function step(current: AutoResult, profile: Profile, summary: Partial<AutoSummar
  * close to the top as the machine allows:
  *
  *   device is full   → projector to the CPU (free: a couple of seconds per
- *                      image, no change to text) → cache to RAM → smaller
- *                      batch → fewer layers, a quarter at a time → CPU only
+ *                      image, no change to text) → smaller batch → fewer
+ *                      layers, a quarter at a time → cache to RAM → CPU only
  *   machine is full  → quantise the cache → smaller batch → half the
  *                      context, down to 4096
  *
@@ -216,10 +227,6 @@ export function backOff(
     if (input.mmprojBytes && !summary.projectorOnCpu) {
       return step(current, { ...profile, noMmprojOffload: true }, { projectorOnCpu: true })
     }
-    if (!summary.kv.startsWith('ram')) {
-      const kv: KvPlacement = summary.kv.endsWith('quantised') ? 'ram-quantised' : 'ram-f16'
-      return step(current, { ...profile, noKvOffload: true }, { kv })
-    }
     if (summary.ubatch > UBATCH_SMALL) {
       return step(current, { ...profile, ubatchSize: UBATCH_SMALL }, { ubatch: UBATCH_SMALL })
     }
@@ -229,6 +236,15 @@ export function backOff(
     if (nextShare !== undefined && blocks) {
       const fewer = Math.max(1, Math.floor(blocks * nextShare))
       return step(current, { ...profile, nGpuLayers: fewer }, { gpuLayers: { on: fewer, of: blocks } })
+    }
+    // The cache to RAM is the LAST thing given up before the CPU, not the
+    // second: it used to sit right after the projector on the theory that it
+    // costs "roughly a quarter" of the speed. Measured on the 27B, it costs
+    // four fifths — 3.6 tokens a second became 0.7 — because every layer's
+    // attention then runs on the CPU against a cache the GPU cannot reach.
+    if (!summary.kv.startsWith('ram')) {
+      const kv: KvPlacement = summary.kv.endsWith('quantised') ? 'ram-quantised' : 'ram-f16'
+      return step(current, { ...profile, noKvOffload: true }, { kv })
     }
     const cpu: Profile = { ...profile, device: 'none', noKvOffload: true }
     delete cpu['nGpuLayers']
@@ -277,6 +293,16 @@ export function recommendProfile(input: AutoInput): AutoResult {
     threads: Math.max(1, input.cpuThreads),
   }
   if (cpuOnly) base['device'] = 'none'
+  // A model that can draft for itself does. See AutoInput.mtp for the
+  // measurement; the head is verified by the model, so the output is exactly
+  // what it would have written unaided — only sooner.
+  if (input.mtp) {
+    base['specType'] = 'draft-mtp'
+    // Two, not the default three: the verification pass costs real time on
+    // an integrated GPU, and the shorter draft measured faster (6.8 against
+    // 5.8 tokens a second on the 27B).
+    base['specDraftNMax'] = 2
+  }
 
   // The measured rule above, and only for a model that comes close to the
   // wall — see UMA_CAP_ABOVE. Only when the layer count is known, too: a cap
@@ -323,6 +349,7 @@ export function recommendProfile(input: AutoInput): AutoResult {
         cpuOnly,
         threads: base['threads'] as number,
         ubatch: UBATCH,
+        ...(input.mtp ? { speculative: 'draft-mtp' as const } : {}),
         level: e.level,
       },
     }
@@ -333,9 +360,17 @@ export function recommendProfile(input: AutoInput): AutoResult {
   // tight at a larger one. Tight was the honest word for the profile that
   // ran with 3 GB to spare, and "auto" should not pick that while something
   // comfortable exists.
+  //
+  // Placement OUTSIDE context, not inside it. The cache on the device at any
+  // context beats the cache in RAM at a larger one: measured on the 27B here,
+  // the same profile writes at 3.6 tokens a second with the cache on the GPU
+  // and 0.7 with it in RAM — a five-fold cost that a longer context does not
+  // repay. So the search asks "the largest context with the cache on the
+  // device" before it ever considers moving the cache; the context ladder
+  // gives back room only when the placement cannot.
   for (const bar of ['fits', 'tight'] as const) {
-    for (const ctx of ladder) {
-      for (const kv of placements(cpuOnly)) {
+    for (const kv of placements(cpuOnly)) {
+      for (const ctx of ladder) {
         const r = attempt(ctx, kv)
         if (r.estimate.level === bar || (bar === 'tight' && r.estimate.level === 'fits'))
           return r

@@ -77,6 +77,21 @@ function isProjector(name: string): boolean {
   return /^mmproj[-_.]/i.test(name)
 }
 
+/**
+ * A drafter is not a model either.
+ *
+ * A DFlash drafter (`general.architecture = dflash`) is a small network that
+ * proposes tokens for a specific target model to verify; on its own it
+ * cannot answer anything, and llama-server refuses to start on one. It is
+ * kept out of the list the way a projector is — recognised by what the
+ * header says rather than by its filename, because the files are named after
+ * the model they serve.
+ */
+const DRAFTER_ARCHS = new Set(['dflash'])
+function isDrafter(info: { architecture: string }): boolean {
+  return DRAFTER_ARCHS.has(info.architecture)
+}
+
 function findProjector(dir: string, files: string[]): string | undefined {
   const p = files.find(isProjector)
   return p ? join(dir, p) : undefined
@@ -115,12 +130,12 @@ export function scanFolder(root: string, cache: Cache): ScanResult {
         const st = statSync(path)
         const hit = cache.entries[path]
         if (hit && hit.mtimeMs === st.mtimeMs && hit.sizeBytes === st.size) {
-          models.push(hit.info)
+          if (!isDrafter(hit.info)) models.push(hit.info)
           continue
         }
         const info = describeModel(path, readGgufHeader(path), projector)
         cache.entries[path] = { mtimeMs: st.mtimeMs, sizeBytes: st.size, info }
-        models.push(info)
+        if (!isDrafter(info)) models.push(info)
       } catch (err) {
         // A download in progress, a truncated file, something that is not a
         // GGUF at all. Reported rather than swallowed: a model the user

@@ -188,6 +188,7 @@ async function autoProfile(modelId: string): Promise<AutoProfileResult> {
   const input = {
     ...(model.geometry ? { geometry: model.geometry } : {}),
     ...(model.mmprojPath ? { mmprojBytes: mmprojBytes(model) } : {}),
+    ...(model.mtp ? { mtp: true } : {}),
   }
   const first: AutoResult = recommendProfile({
     fileBytes: model.sizeBytes,

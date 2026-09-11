@@ -150,6 +150,7 @@ export const en = {
   'server.autoCpu': 'CPU only',
   'server.autoThreads': 'threads',
   'server.autoProjector': 'projector on the CPU',
+  'server.autoSpec': 'self-drafting',
   'server.autoUbatch': 'batch',
   'server.autoWontFit':
     'Nothing fits this machine comfortably; this is the smallest arrangement, and the verdict below says why.',
@@ -438,6 +439,7 @@ export const ru: Record<StringKey, string> = {
   'server.autoCpu': 'только CPU',
   'server.autoThreads': 'потоков',
   'server.autoProjector': 'проектор на CPU',
+  'server.autoSpec': 'самодрафт',
   'server.autoUbatch': 'пакет',
   'server.autoWontFit':
     'На этой машине ничего не помещается свободно; это самый скромный вариант, а вердикт ниже говорит почему.',

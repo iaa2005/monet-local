@@ -89,7 +89,7 @@ export const FLAGS: Registry = {
       ru: 'KV-кэш в системной памяти',
     },
     help: {
-      en: 'On an integrated GPU this is what lets context go past ~8k. The wall is not the cache size — quantising it does not help — it is that the weights plus the compute buffers already fill the shared pool. Costs roughly a quarter of the generation speed.',
+      en: 'On an integrated GPU this is what lets context go past ~8k. The wall is not the cache size — quantising it does not help — it is that the weights plus the compute buffers already fill the shared pool. Measured on a 27B here, it costs FOUR FIFTHS of the generation speed (3.6 → 0.7 tokens a second): every layer’s attention then runs on the CPU against a cache the GPU cannot reach. A smaller context with the cache on the GPU is almost always the better trade. Costs roughly a quarter of the generation speed.',
       ru: 'На встроенной видеокарте именно это позволяет контексту вырасти за ~8k. Стенка не в размере кэша — квантование не помогает — а в том, что веса и вычислительные буферы уже занимают общий пул. Стоит примерно четверти скорости генерации.',
     },
     recommendWhen: (p, hw) =>
@@ -383,8 +383,26 @@ export const FLAGS: Registry = {
     ],
     label: { en: 'Speculative decoding', ru: 'Спекулятивное декодирование' },
     help: {
-      en: 'Guess several tokens and verify them in one pass. Measure before believing: on an integrated GPU, draft-mtp would not start at all (its head needs a spare gigabyte of device memory), and forcing room for it by moving the KV cache to RAM dropped prompt processing from 25 to 1.4 tokens a second. ngram-mod is harmless and helps on repetitive text.',
-      ru: 'Угадать несколько токенов и проверить за один проход. Сначала замерьте: на встроенной видеокарте draft-mtp вообще не стартовал (голове нужен свободный гигабайт), а если освободить место, вынеся KV в RAM, обработка промпта падает с 25 до 1.4 токенов в секунду. ngram-mod безвреден и помогает на повторяющемся тексте.',
+      en: 'Guess several tokens and verify them in one pass; the output is exactly what the model would have written unaided. Measured on a 27B here with the KV cache on the GPU: draft-mtp (the model’s own prediction head) 3.6 → 5.8 tokens a second at 82% acceptance, the best lever there is on a dense model; a DFlash2 drafter 4.1; ngram-mod no change. Auto turns on draft-mtp for any model that carries the head. It fails to start only when the device is already full — move the projector or the cache first, not the other way round.',
+      ru: 'Угадать несколько токенов и проверить за один проход; вывод ровно тот, что модель написала бы сама. Измерено на 27B здесь с KV-кэшем на видеокарте: draft-mtp (собственная голова предсказания модели) 3.6 → 5.8 токенов в секунду при 82% принятия — лучший рычаг для плотной модели; драфтер DFlash2 — 4.1; ngram-mod — без изменений. Авто включает draft-mtp для любой модели с такой головой. Не стартует только когда устройство уже заполнено — сначала уберите проектор или кэш, а не наоборот.',
+    },
+  },
+
+  specDraftNMax: {
+    cli: '--spec-draft-n-max',
+    ini: 'spec-draft-n-max',
+    group: 'speculative',
+    level: 'expert',
+    type: 'int',
+    // No default on purpose: the flag only matters with a spec-type, and a
+    // registry default would put it on every command line.
+    min: 1,
+    max: 16,
+    step: 1,
+    label: { en: 'Draft length', ru: 'Длина черновика' },
+    help: {
+      en: 'Tokens guessed per verification. On an integrated GPU the verification pass is not free, so shorter wins: measured on a 27B here, draft-mtp gave 6.8 tokens a second at 2, 5.8 at the default 3; a DFlash2 drafter 6.7 at 3 and 4.1 at 7.',
+      ru: 'Сколько токенов угадывать на одну проверку. На встроенной видеокарте проверка не бесплатна, поэтому короче — лучше: на 27B здесь draft-mtp дал 6.8 токенов в секунду при 2 и 5.8 при стандартных 3; драфтер DFlash2 — 6.7 при 3 и 4.1 при 7.',
     },
   },
 

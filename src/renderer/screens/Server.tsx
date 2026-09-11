@@ -803,6 +803,7 @@ function AutoNote({
         ? `${s.gpuLayers.on}/${s.gpuLayers.of} ${t('server.autoLayers')}`
         : null,
     s.projectorOnCpu ? t('server.autoProjector') : null,
+    s.speculative ? t('server.autoSpec') : null,
     s.ubatch !== 256 ? `${t('server.autoUbatch')} ${s.ubatch}` : null,
     `${s.threads} ${t('server.autoThreads')}`,
   ].filter(Boolean)
