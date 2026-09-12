@@ -131,6 +131,11 @@ export const en = {
   'server.speedGuess': 'estimated from the modules\u2019 rate \u2014 run a benchmark to measure it',
   'server.speedAssumed': 'no rate reported \u2014 assumed DDR5-5600 in two channels',
   'server.speedMeasured': 'measured by llama-bench:',
+  'server.speedFull': 'with the context full at',
+  'server.speedKv': 'every token also reads the cache of those before it,',
+  'server.speedSwap': 'will page to disk',
+  'server.speedSwapWhy':
+    'More than the RAM has to give right now, so the disk stands in for it. Measured: 1.5 tok/s for a configuration that writes 34 with the memory free. Lower the context, quantise the cache, or close what is holding the memory.',
   'server.speedTitle': 'Generation speed',
   'server.load': 'Load',
   'server.unload': 'Unload',
@@ -420,6 +425,11 @@ export const ru: Record<StringKey, string> = {
   'server.speedBandwidth': 'память отдаёт',
   'server.speedGuess': 'оценка по частоте модулей — запустите бенчмарк, чтобы измерить',
   'server.speedMeasured': 'измерено llama-bench:',
+  'server.speedFull': 'при заполненном контексте',
+  'server.speedKv': 'каждый токен читает ещё и кэш всех предыдущих,',
+  'server.speedSwap': 'уйдёт в своп',
+  'server.speedSwapWhy':
+    'Памяти сейчас не хватает, и вместо неё работает диск. Измерено: 1.5 tok/s у конфигурации, которая при свободной памяти пишет 34. Уменьшите контекст, квантуйте кэш или закройте то, что держит память.',
   'server.speedAssumed': 'частота не сообщается \u2014 принято DDR5-5600 в двух каналах',
   'server.speedTitle': 'Скорость генерации',
   'server.load': 'Загрузить',

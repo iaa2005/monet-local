@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Copy, Pencil, Play, Plus, RotateCw, Square, Trash2 } from 'lucide-react'
-import type { Estimate } from '@shared/estimator.js'
+import { estimate as estimateProfile, type Estimate } from '@shared/estimator.js'
 import type { StringKey } from '@shared/i18n.js'
+import { withDefaults } from '@shared/flags/build.js'
 import type { Hardware, Profile } from '@shared/flags/types.js'
-import { bytes } from '@shared/format.js'
+import { bytes, tokens } from '@shared/format.js'
+import { kvBytesPerToken } from '@shared/models/geometry.js'
 import {
   activeWeightBytes,
   formatTps,
@@ -250,10 +252,28 @@ export function Server(): JSX.Element {
    * file and an 11 GiB file sat side by side, and the smaller one is seven
    * times faster because it is a mixture of experts.
    */
-  const speedOf = useCallback(
-    (m: ModelInfo) => {
+  /**
+   * With `p` as the settings — the model's own configuration in the list,
+   * the one being edited under the verdict. The settings are in it because
+   * they are in the speed: the context decides how much cache every token
+   * reads back (measured on a 2B: 36 tok/s empty, 13 at 64K, single digits
+   * at 262K), the cache types decide what each of those tokens costs, and
+   * a configuration that does not fit in RAM pages to disk — measured at
+   * 1.5 tok/s for the very command that wrote 34 with the memory free.
+   */
+  const speedFor = useCallback(
+    (m: ModelInfo, p: Profile) => {
       const bandwidth = hardware.memoryBandwidthBytesPerSecond
       if (!bandwidth || !m.weightBytes) return null
+      const full = withDefaults(p)
+      const ctx = Number(full['ctxSize'] ?? 0)
+      const kv = m.geometry
+        ? kvBytesPerToken(
+            m.geometry,
+            String(full['cacheTypeK'] ?? 'f16'),
+            String(full['cacheTypeV'] ?? 'f16'),
+          )
+        : undefined
       const input = {
         weightBytes: m.weightBytes,
         ...(m.expertBytes ? { expertBytes: m.expertBytes } : {}),
@@ -263,17 +283,43 @@ export function Server(): JSX.Element {
         // A benchmarked figure is what the runtime delivered; the modules'
         // figure is a bus that a run reaches three quarters of.
         bandwidthIsEffective: hardware.memoryBandwidthIsEffective ?? false,
+        ...(kv !== undefined ? { kvBytesPerToken: kv } : {}),
       }
       const tps = generationTps(input)
+      // The state below is also called `estimate`: this is the function.
+      const verdict = estimateProfile({
+        fileBytes: m.sizeBytes,
+        ...(m.geometry ? { geometry: m.geometry } : {}),
+        profile: p,
+        hardware,
+      })
       return {
         tps,
         band: speedBand(tps),
         activeBytes: activeWeightBytes(input),
         bandwidth,
         source: hardware.memoryBandwidth,
+        // Speed with the context full: what a long session becomes.
+        ...(kv !== undefined && ctx > 0
+          ? { full: { ctx, tps: generationTps(input, ctx), cacheBytes: kv * ctx } }
+          : {}),
+        // Over the RAM: no bandwidth figure applies, the disk does.
+        swaps:
+          verdict.level === 'wont_fit' &&
+          verdict.findings.some((f) => f.code === 'exceeds-ram'),
       }
     },
-    [hardware.memoryBandwidthBytesPerSecond, hardware.memoryBandwidthIsEffective, hardware.memoryBandwidth],
+    [hardware],
+  )
+  const speedOf = useCallback(
+    (m: ModelInfo) =>
+      speedFor(
+        m,
+        profiles?.profiles.find(
+          (x) => x.id === (profiles.assignments[m.id] ?? profiles.defaultProfileId),
+        )?.values ?? {},
+      ),
+    [speedFor, profiles],
   )
 
   const chosen = models.find((m) => m.id === selected)
@@ -690,6 +736,10 @@ export function Server(): JSX.Element {
               edit(next)
             }}
           />
+          {/* The speed these settings buy, beside the memory they cost.
+              Both move with the same dials: a longer context is more cache
+              to hold AND more cache for every token to read back. */}
+          {chosen ? <SpeedLine s={speedFor(chosen, values)} /> : null}
           <div className="mt-4">
             <ProfilePanel
               values={values}
@@ -728,19 +778,18 @@ function count(n: number): string {
  * memory bandwidth divided by the weights a token reads; there is nothing
  * else in it.
  */
-function Speed({
-  s,
-}: {
-  s: {
-    tps: number
-    band: 'fast' | 'usable' | 'slow'
-    activeBytes: number
-    bandwidth: number
-    source: Hardware['memoryBandwidth']
-  } | null
-}): JSX.Element | null {
-  const t = useT()
-  if (!s) return null
+interface SpeedFigure {
+  tps: number
+  band: 'fast' | 'usable' | 'slow'
+  activeBytes: number
+  bandwidth: number
+  source: Hardware['memoryBandwidth']
+  full?: { ctx: number; tps: number; cacheBytes: number }
+  swaps: boolean
+}
+
+/** The tooltip: every number the badge was made from, so it can be checked. */
+function speedWhy(s: SpeedFigure, t: ReturnType<typeof useT>): string {
   // Where the bandwidth came from is the difference between a measurement
   // and a guess, and the tooltip is where the arithmetic is checked.
   const from =
@@ -749,15 +798,68 @@ function Speed({
       : s.source?.source === 'firmware'
         ? t('server.speedGuess')
         : t('server.speedAssumed')
-  const why =
-    `${t('server.speedTitle')}: ${t(`server.speed.${s.band}` as StringKey)}
-` +
-    `${t('server.speedWhy')} ${bytes(s.activeBytes, 1)}; ` +
-    `${t('server.speedBandwidth')} ${bytes(s.bandwidth, 0)}/s
-${from}`
+  const lines = [
+    `${t('server.speedTitle')}: ${s.swaps ? t('server.speedSwap') : t(`server.speed.${s.band}` as StringKey)}`,
+    `${t('server.speedWhy')} ${bytes(s.activeBytes, 1)}; ${t('server.speedBandwidth')} ${bytes(s.bandwidth, 0)}/s`,
+    from,
+  ]
+  if (s.full)
+    lines.push(
+      `${t('server.speedFull')} ${tokens(s.full.ctx)}: ${t('server.speedKv')} ${bytes(s.full.cacheBytes, 1)} → ≈${formatTps(s.full.tps)}`,
+    )
+  if (s.swaps) lines.push(t('server.speedSwapWhy'))
+  return lines.join('\n')
+}
+
+/**
+ * The same figure as a sentence under the verdict: what the configuration
+ * being edited writes at, empty and full. "≈34 tok/s" on the row above is
+ * for the configuration the model HAS; this one follows the dials.
+ */
+function SpeedLine({ s }: { s: SpeedFigure | null }): JSX.Element | null {
+  const t = useT()
+  if (!s) return null
   return (
-    <Badge tone={s.band === 'fast' ? 'ok' : s.band === 'usable' ? undefined : 'warn'} title={why}>
+    <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+      <span>{t('server.speedTitle')}:</span>
+      {s.swaps ? (
+        <>
+          <Badge tone="bad">{t('server.speedSwap')}</Badge>
+          <span>{t('server.speedSwapWhy')}</span>
+        </>
+      ) : (
+        <>
+          <b className="font-display text-foreground">≈{formatTps(s.tps)}</b>
+          {s.full ? (
+            <span>
+              {t('server.speedFull')} {tokens(s.full.ctx)}:{' '}
+              <b className="font-display text-foreground">≈{formatTps(s.full.tps)}</b>{' '}
+              ({t('server.speedKv')} {bytes(s.full.cacheBytes, 1)})
+            </span>
+          ) : null}
+        </>
+      )}
+    </p>
+  )
+}
+
+function Speed({ s }: { s: SpeedFigure | null }): JSX.Element | null {
+  const t = useT()
+  if (!s) return null
+  if (s.swaps)
+    return (
+      <Badge tone="bad" title={speedWhy(s, t)}>
+        {t('server.speedSwap')}
+      </Badge>
+    )
+  // The full-context figure is shown only when it changes the answer: a
+  // 4096 context costs nothing worth a second number.
+  const drop = s.full && s.full.tps < s.tps * 0.8
+  const worst = drop ? speedBand(s.full!.tps) : s.band
+  return (
+    <Badge tone={worst === 'fast' ? 'ok' : worst === 'usable' ? undefined : 'warn'} title={speedWhy(s, t)}>
       ≈{formatTps(s.tps)}
+      {drop ? ` → ${formatTps(s.full!.tps)}` : ''}
     </Badge>
   )
 }

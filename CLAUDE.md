@@ -126,6 +126,17 @@ Privacy & security -> For developers) makes the full build work locally too.
   no UMA badge, Auto's shared-heap rule off. `integratedByName` fills the
   bit from the driver's name when the banner says nothing; a banner that
   does say wins.
+- **A token reads the cache too, and a cache over the RAM is read from
+  disk.** The user's own command — Qwen3.5-2B, `--ctx-size 262144`, f16
+  cache, SYCL — wrote 1.5 tok/s with 2 GiB of RAM free and 33.7 with
+  4.9 GiB free, the same day; the 8 GiB cache had nowhere to be.
+  llama-bench at depth (SYCL: 35.7 / 25.9 / 13.0 tok/s at 0 / 16K / 64K)
+  matches `bytesPerToken = weights + kv × depth` to within a token; Vulkan
+  (32.2 / 29.0 / 20.7) beats it by ~1.7× at 64K, so the figure is a lower
+  bound. The Server screen shows empty AND full-context speed, and "will
+  page to disk" when the estimator's RAM verdict is a refusal. Measure
+  with the servers actually stopped between runs: six of them left alive by
+  a probe script produced a set of numbers that meant nothing.
 
 ## Style
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   activeWeightBytes,
+  bytesPerToken,
   ddrBandwidth,
   effectiveBandwidth,
   formatTps,
@@ -138,6 +139,37 @@ describe('the bus, from what the firmware lists', () => {
     expect(modulesBandwidth([{ mtPerSecond: 3200 }])?.busBits).toBe(64)
     expect(modulesBandwidth([{ mtPerSecond: 0 }])).toBeNull()
     expect(modulesBandwidth([])).toBeNull()
+  })
+})
+
+describe('a token reads the cache too', () => {
+  // Qwen3.5-2B Q4_K_M on an Intel Arc iGPU, SYCL b10924: llama-bench tg64
+  // at three depths. 35.72 tok/s with the cache empty is the bandwidth
+  // this runtime delivers on this model; the other two are what the same
+  // arithmetic has to reproduce.
+  const QWEN_2B = {
+    weightBytes: 1.27e9,
+    kvBytesPerToken: 32 * 1024, // 8 attention layers × 4 KV heads × 256 × 2 halves × f16
+    bandwidthBytesPerSecond: effectiveBandwidth(35.72, 1.27e9),
+    bandwidthIsEffective: true,
+  }
+
+  it('slows as the context fills — measured 25.9 at 16K and 13.0 at 64K', () => {
+    expect(generationTps(QWEN_2B, 0)).toBeCloseTo(35.72, 1)
+    expect(generationTps(QWEN_2B, 16384)).toBeGreaterThan(24)
+    expect(generationTps(QWEN_2B, 16384)).toBeLessThan(27)
+    expect(generationTps(QWEN_2B, 65536)).toBeGreaterThan(12)
+    expect(generationTps(QWEN_2B, 65536)).toBeLessThan(14.5)
+  })
+
+  it('says what a full 262144 really costs: single digits', () => {
+    expect(bytesPerToken(QWEN_2B, 262144) / 1e9).toBeCloseTo(9.86, 1)
+    expect(generationTps(QWEN_2B, 262144)).toBeLessThan(5)
+    expect(speedBand(generationTps(QWEN_2B, 262144))).toBe('slow')
+  })
+
+  it('reads only the weights when the cache cost is unknown', () => {
+    expect(generationTps({ ...QWEN_2B, kvBytesPerToken: undefined }, 65536)).toBeCloseTo(35.72, 1)
   })
 })
 

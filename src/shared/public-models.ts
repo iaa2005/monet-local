@@ -9,10 +9,11 @@
  */
 
 import { estimate } from './estimator.js'
+import { withDefaults } from './flags/build.js'
 import { FLAGS } from './flags/registry.js'
 import { activeWeightBytes, generationTps } from './models/speed.js'
 import type { Hardware, Profile } from './flags/types.js'
-import type { ModelGeometry } from './models/geometry.js'
+import { kvBytesPerToken, type ModelGeometry } from './models/geometry.js'
 
 export type ModelStatus = 'unloaded' | 'loading' | 'loaded'
 
@@ -86,7 +87,10 @@ export interface PublicModel {
    * dense model beside it. Null when the file could not be weighed.
    */
   active_bytes_per_token: number | null
+  /** With the context empty — the best case, the start of a session. */
   generation_tps: number | null
+  /** With the configured context full: every token reads the whole cache back. */
+  generation_tps_full_context: number | null
   modalities: ('text' | 'image')[]
   moe: boolean
   /** Whether this machine could run it as configured. */
@@ -150,6 +154,16 @@ export function publicModels(
     // memory rate there is no speed — and a made-up one would be worse than
     // none, because a client would show it as fact.
     const bandwidth = hardware.memoryBandwidthBytesPerSecond
+    // The cache a token reads back, at the cache types this model runs
+    // with: the context decides how far generation falls over a session.
+    const settings = withDefaults(profile)
+    const kv = m.geometry
+      ? kvBytesPerToken(
+          m.geometry,
+          String(settings['cacheTypeK'] ?? 'f16'),
+          String(settings['cacheTypeV'] ?? 'f16'),
+        )
+      : undefined
     const speedInput =
       m.weightBytes && bandwidth
         ? {
@@ -159,10 +173,15 @@ export function publicModels(
             ...(m.expertUsedCount ? { expertUsedCount: m.expertUsedCount } : {}),
             bandwidthBytesPerSecond: bandwidth,
             bandwidthIsEffective: hardware.memoryBandwidthIsEffective ?? false,
+            ...(kv !== undefined ? { kvBytesPerToken: kv } : {}),
           }
         : null
     const active = speedInput ? Math.round(activeWeightBytes(speedInput)) : null
     const tps = speedInput ? Math.round(generationTps(speedInput) * 10) / 10 : null
+    const tpsFull =
+      speedInput && kv !== undefined && typeof ctx === 'number' && ctx > 0
+        ? Math.round(generationTps(speedInput, ctx) * 10) / 10
+        : null
     return {
       id: m.id,
       object: 'model',
@@ -178,6 +197,7 @@ export function publicModels(
       effort_levels: effortLevels,
       active_bytes_per_token: active,
       generation_tps: tps,
+      generation_tps_full_context: tpsFull,
       // Sight is a property of the RUNNING server, not of the folder: a
       // model loaded without its projector (to make room, say) answers an
       // image with a 500, and a client told "image" would send one.

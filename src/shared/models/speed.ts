@@ -126,6 +126,38 @@ export interface SpeedInput {
    * read off the modules, so the efficiency factor is already in it.
    */
   bandwidthIsEffective?: boolean
+  /**
+   * What one token of context costs in the cache, at the cache types the
+   * profile sets. Every generated token reads the cache of every token
+   * before it, so this is the second thing a token reads — and at a long
+   * context the larger one. See generationTps.
+   */
+  kvBytesPerToken?: number
+}
+
+/**
+ * The bytes ONE token reads with `depth` tokens already in the context.
+ *
+ * Measured on Qwen3.5-2B Q4_K_M (1.27 GB of weights, 32 KiB of f16 cache
+ * per token) on an Intel Arc iGPU under SYCL:
+ *
+ *   depth        bytes/token   predicted   MEASURED (llama-bench tg64)
+ *   0              1.27 GB       —           35.7 t/s
+ *   16384          1.81 GB      25.1 t/s     25.9 t/s
+ *   65536          3.42 GB      13.3 t/s     13.0 t/s
+ *
+ * The same arithmetic puts a FULL 262144 context at 9.9 GB per token and
+ * under 5 tokens a second — which is what a person choosing "262144" on
+ * the slider is really choosing, and nothing on the screen said so.
+ *
+ * A lower bound, not a law: the Vulkan backend on the same iGPU measured
+ * 32.2 / 29.0 / 20.7 at the same depths, so its attention reads the cache
+ * more cheaply than the bytes suggest (about 1.7× at 64K). The figure is
+ * therefore honest about the direction and pessimistic about the size,
+ * which is the right way to be wrong about a slider that ends at 262144.
+ */
+export function bytesPerToken(input: SpeedInput, depth = 0): number {
+  return activeWeightBytes(input) + (input.kvBytesPerToken ?? 0) * Math.max(0, depth)
 }
 
 /**
@@ -147,14 +179,17 @@ export function activeWeightBytes(input: SpeedInput): number {
   return weightBytes - expertBytes + expertBytes * (used / expertCount)
 }
 
-/** Tokens per second this machine can generate, at best. */
-export function generationTps(input: SpeedInput): number {
-  const active = activeWeightBytes(input)
-  if (active <= 0) return 0
+/**
+ * Tokens per second this machine can generate, with `depth` tokens already
+ * in the context — at best with an empty one, and at worst with it full.
+ */
+export function generationTps(input: SpeedInput, depth = 0): number {
+  const read = bytesPerToken(input, depth)
+  if (read <= 0 || activeWeightBytes(input) <= 0) return 0
   const usable = input.bandwidthIsEffective
     ? input.bandwidthBytesPerSecond
     : input.bandwidthBytesPerSecond * EFFICIENCY
-  return usable / active
+  return usable / read
 }
 
 /**

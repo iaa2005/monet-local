@@ -761,11 +761,19 @@ export const HANDBOOK_EN: Chapter[] = [
           },
           {
             k: 'p',
+            t: 'The weights are not the only thing a token reads. Every attention layer also reads the K and V of every token before it, so what a token costs grows with the context: $S_{\text{eff}} = S + c \cdot n$, where $c$ is the cache per token and $n$ the tokens already in the context. Measured on Qwen3.5-2B (1.27 GB, 32 KiB of cache per token) on an Intel Arc iGPU: 35.7 tokens per second with the context empty, 25.9 at 16K, 13.0 at 64K — the formula predicts 25.1 and 13.3. A full 262144 makes it 9.9 GB per token and under five tokens a second, for a model of 1.3 GB.',
+          },
+          {
+            k: 'p',
+            t: 'And a cache that does not fit in RAM is read from the disk instead. The same configuration measured 1.5 tokens per second with the memory taken by other programs and 34 with it free — nothing in the formula, everything in the verdict above it.',
+          },
+          {
+            k: 'p',
             t: 'A GPU has a much wider bus — 200 GB/s on a modest discrete card, up to 1000 on a large one. But integrated graphics shares the processor\'s bus, so on machines like this the gain is modest and comes mostly from prompt processing.',
           },
           {
             k: 'app',
-            t: 'The Benchmark screen shows this ceiling next to the measurement. Generation close to it means you have hit the hardware and the configuration is not the problem. For MoE models the tile marks the figure as not applying: only part of the weights is active.',
+            t: 'The Server screen shows two speeds beside each model — with the context empty and with it full — and “will page to disk” when the configuration is over the RAM. The Benchmark screen shows this ceiling next to the measurement. Generation close to it means you have hit the hardware and the configuration is not the problem. For MoE models the tile marks the figure as not applying: only part of the weights is active.',
           },
         ],
       },
