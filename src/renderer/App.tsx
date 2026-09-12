@@ -60,7 +60,7 @@ export default function App(): JSX.Element {
           draggable={false}
           className="ml-3 size-[18px] rounded-[4px]"
         />
-        <span className="font-display px-2 text-base font-semibold tracking-tight">
+        <span className="font-display px-2 text-base font-normal tracking-tight">
           {t('app.name')}
         </span>
         <div className="flex-1" />

@@ -147,6 +147,25 @@ Privacy & security -> For developers) makes the full build work locally too.
   bare named import is undefined — Code Monet shipped a release that never
   checked because of exactly that. Nothing in 0.1.0–0.1.2 called the
   updater at all, so those installs must be updated by hand once.
+- **A download is a job in a list, never a call that waits.** The first
+  `hf:download` returned when the file was whole — two hours at 2 MB/s
+  during which the screen was disabled, nothing else could be queued, and
+  leaving the screen lost the only view of the progress while main kept
+  fetching with no way to stop it. `shared/downloads.ts` is the queue (one
+  transfer at a time, states queued / downloading / done / paused /
+  failed, the partial kept on stop and resumed on retry, the whole list
+  pushed as `hf:downloads` on every change and written to
+  `downloads/queue.json` on every state change so a restart wakes up with
+  yesterday's transfers paused). The Models screen shows the list above
+  both tabs; the sidebar pill shows it from anywhere. Test the queue with a
+  fake transfer, not the network.
+- **Close hides; the tray quits.** A model server that stops when its
+  window closes is a chat. `app/tray.ts`: the close handler hides the window
+  unless a quit is under way (`markQuitting` is set by `before-quit`, so
+  the tray's Quit, the OS and an updater relaunch all get through), the
+  tray icon reopens it, and `window-all-closed` does nothing. Measured over
+  CDP: after the app's own close button the page is `hidden`, the process
+  is alive and a download keeps moving.
 
 ## Style
 

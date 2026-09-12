@@ -1,12 +1,11 @@
 import { ipcMain } from 'electron'
 import type { Profile } from '@shared/flags/types.js'
-import { downloadUrl, rankRepos, repoContents, type HfRepo, type HfSibling } from '@shared/hf.js'
+import { rankRepos, repoContents, type HfRepo, type HfSibling } from '@shared/hf.js'
 import { activeWeightBytes, effectiveBandwidth } from '@shared/models/speed.js'
 import { benchHistory, runBench } from '../bench/run.js'
 import { recordBandwidth } from '../app/bandwidth-store.js'
-import { getMainWindow } from '../app/main-window.js'
 import { readSettings } from '../app/settings-store.js'
-import { downloadModel, pendingDownloads } from '../models/download.js'
+import { downloads, enqueueDownload } from '../models/download-manager.js'
 import { scanFolders } from '../models/library.js'
 import { listInstalled, pickDefault } from '../runtimes/manager.js'
 import { join } from 'node:path'
@@ -101,36 +100,37 @@ export function registerBenchIpc(): void {
     return { repoId, ...repoContents(body.siblings ?? []) }
   })
 
+  /**
+   * Queue a file and answer at once. The transfer runs in main, in a list
+   * every screen can see; holding this call for the two hours a 14 GB file
+   * takes here is what disabled the screen and hid the progress.
+   */
   ipcMain.handle(
     'hf:download',
-    async (
-      _e,
-      repoId: string,
-      path: string,
-      expectedBytes: number,
-      sha256?: string,
-    ) => {
+    (_e, repoId: string, path: string, expectedBytes: number, sha256?: string) => {
       const settings = readSettings()
       const folder =
         settings.downloadFolder ??
         settings.modelFolders.find((f) => !f.readOnly)?.path
       if (!folder) throw new Error('no writable model folder configured')
-
-      const win = getMainWindow()
-      return downloadModel({
-        url: downloadUrl(repoId, path),
+      const name = path.split('/').pop() ?? path
+      return enqueueDownload({
+        repoId,
+        path,
+        name,
         // Flattened: a repository's folders are its business, and a nested
         // path would put the file somewhere the library has to go looking.
-        destPath: join(folder, path.split('/').pop() ?? path),
+        destPath: join(folder, name),
         expectedBytes,
         ...(sha256 ? { sha256 } : {}),
-        ...(settings.hfToken ? { token: settings.hfToken } : {}),
-        onProgress: (p) =>
-          void win?.webContents.send('hf:progress', { path, ...p }),
       })
     },
   )
 
-  /** Partial downloads left by a previous run, so a queue can be resumed. */
-  ipcMain.handle('hf:pending', () => pendingDownloads())
+  ipcMain.handle('hf:downloads', () => downloads().list())
+  ipcMain.handle('hf:cancel', (_e, id: string) => downloads().cancel(id))
+  ipcMain.handle('hf:retry', (_e, id: string) => downloads().retry(id))
+  ipcMain.handle('hf:remove', (_e, id: string) => downloads().remove(id))
+  ipcMain.handle('hf:clearFinished', () => downloads().clearFinished())
+
 }

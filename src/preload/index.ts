@@ -13,7 +13,7 @@ import type { Activity, RouterStatus } from '@main/server/router.js'
 import type { StrayProcess } from '@main/server/orphans.js'
 import type { StoredRun } from '@main/bench/run.js'
 import type { HfFile, HfRepo } from '@shared/hf.js'
-import type { DownloadProgress, DownloadResult } from '@main/models/download.js'
+import type { DownloadJob } from '@shared/downloads.js'
 import type { UpdateState } from '@main/app/updater.js'
 
 export interface RuntimeState {
@@ -79,16 +79,12 @@ export interface RepoContents {
   split: string[]
 }
 
-/** A download's progress, tagged with the file it belongs to. */
-export type DownloadEvent = DownloadProgress & { path: string }
-
 export type {
   AppSettings,
   AutoAttempt,
   AutoProfileResult,
   AutoProgress,
   Device,
-  DownloadResult,
   HfFile,
   HfRepo,
   StoredRun,
@@ -217,19 +213,26 @@ const api = {
       ipcRenderer.invoke('hf:search', query),
     repo: (repoId: string): Promise<RepoContents> =>
       ipcRenderer.invoke('hf:repo', repoId),
+    /** Queue a file; answers at once with the job. The list carries the rest. */
     download: (
       repoId: string,
       path: string,
       expectedBytes: number,
       sha256?: string,
-    ): Promise<DownloadResult> =>
+    ): Promise<DownloadJob> =>
       ipcRenderer.invoke('hf:download', repoId, path, expectedBytes, sha256),
-    pending: (): Promise<{ name: string; bytes: number }[]> =>
-      ipcRenderer.invoke('hf:pending'),
-    onProgress: (cb: (p: DownloadEvent) => void): (() => void) => {
-      const h = (_e: unknown, p: DownloadEvent): void => cb(p)
-      ipcRenderer.on('hf:progress', h)
-      return () => ipcRenderer.off('hf:progress', h)
+    downloads: (): Promise<DownloadJob[]> => ipcRenderer.invoke('hf:downloads'),
+    /** Stop, keep the partial. */
+    cancel: (id: string): Promise<void> => ipcRenderer.invoke('hf:cancel', id),
+    /** Start again from the partial. */
+    retry: (id: string): Promise<void> => ipcRenderer.invoke('hf:retry', id),
+    /** Forget the job and delete the partial; a finished file stays. */
+    remove: (id: string): Promise<void> => ipcRenderer.invoke('hf:remove', id),
+    clearFinished: (): Promise<void> => ipcRenderer.invoke('hf:clearFinished'),
+    onDownloads: (cb: (jobs: DownloadJob[]) => void): (() => void) => {
+      const h = (_e: unknown, jobs: DownloadJob[]): void => cb(jobs)
+      ipcRenderer.on('hf:downloads', h)
+      return () => ipcRenderer.off('hf:downloads', h)
     },
   },
 

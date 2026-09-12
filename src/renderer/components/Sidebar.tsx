@@ -8,7 +8,9 @@ import {
   Settings as SettingsIcon,
   type LucideIcon,
 } from 'lucide-react'
+import { DownloadsPill } from '@/components/Downloads'
 import { UpdatePill } from '@/components/UpdatePill'
+import { useDownloads } from '@/lib/downloads'
 import { cn } from '@/lib/utils'
 import { useT, useUi, type ScreenId } from '@/stores/uiStore'
 import type { StringKey } from '@shared/i18n.js'
@@ -37,6 +39,7 @@ export function Sidebar(): JSX.Element {
   const screen = useUi((s) => s.screen)
   const go = useUi((s) => s.go)
   const t = useT()
+  const downloads = useDownloads()
 
   const item = ({ id, label, Icon }: (typeof ITEMS)[number]): JSX.Element => {
     const active = screen === id
@@ -49,9 +52,9 @@ export function Sidebar(): JSX.Element {
         className={cn(
           'flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors',
           active
-            // Selection is the brand wash with a real edge — the same
-            // treatment every selected row in the app will get.
-            ? 'bg-brand-wash text-foreground'
+            // Selection is the brand wash, and the label takes the brand
+            // colour too — the icon alone was not enough of a mark.
+            ? 'bg-brand-wash text-brand'
             : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
         )}
       >
@@ -70,6 +73,7 @@ export function Sidebar(): JSX.Element {
       <div className="flex-1" />
       {/* Above the handbook, below everything that acts on the machine:
           an update is offered here and never installed unasked. */}
+      <DownloadsPill jobs={downloads} />
       <UpdatePill />
       {FOOT.map(item)}
     </nav>

@@ -8,6 +8,7 @@ import {
   setMainWindow,
 } from './app/main-window.js'
 import { readPrefs } from './app/prefs-store.js'
+import { createTray, isQuitting, markQuitting, showMainWindow } from './app/tray.js'
 import { registerIpc } from './ipc/index.js'
 import { shutdownServer } from './ipc/server.js'
 
@@ -52,6 +53,14 @@ function createWindow(): void {
   setMainWindow(win)
   win.once('ready-to-show', () => win.show())
 
+  // Close hides. The server, the gateway and a download in flight keep
+  // going; the tray icon brings the window back or quits for real.
+  win.on('close', (e) => {
+    if (isQuitting()) return
+    e.preventDefault()
+    win.hide()
+  })
+
   // Nothing in this app should navigate itself or open a second window; a
   // link goes to the user's browser instead.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -74,15 +83,12 @@ function createWindow(): void {
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
-    const win = getMainWindow()
-    if (!win) return
-    if (win.isMinimized()) win.restore()
-    win.focus()
-  })
+  // A second launch is someone looking for the window that is in the tray.
+  app.on('second-instance', showMainWindow)
 
   void app.whenReady().then(() => {
     registerIpc()
+    createTray()
     // Lazily: electron-updater reads app-update.yml when it loads, and a
     // dev run has none. The handlers register either way.
     void import('./app/updater.js')
@@ -102,17 +108,21 @@ if (!app.requestSingleInstanceLock()) {
     })
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
+      else showMainWindow()
     })
   })
 
-  app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit()
-  })
+  // Never reached by a plain close (the window hides), and a real quit is
+  // already on its way through before-quit; nothing to do here.
+  app.on('window-all-closed', () => undefined)
 
   // A router left running holds 16 GB of weights and the port. Stop it
   // before the process goes, and make quitting wait for that to finish.
   let shuttingDown = false
   app.on('before-quit', (e) => {
+    // Whatever asked — the tray, the OS, an updater relaunch — the window's
+    // close handler must now let the window go.
+    markQuitting()
     if (shuttingDown) return
     e.preventDefault()
     shuttingDown = true

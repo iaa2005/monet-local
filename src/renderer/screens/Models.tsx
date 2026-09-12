@@ -4,7 +4,9 @@ import { bytes, tokens } from '@shared/format.js'
 import { Button } from '@/components/ui/button'
 import { Badge, Card, Empty, Page, PageHeader, Section, Stat } from '@/components/ui/page'
 import { Segmented } from '@/components/ui/segmented'
+import { DownloadsPanel } from '@/components/Downloads'
 import { HuggingFace } from '@/screens/HuggingFace'
+import { useDownloads } from '@/lib/downloads'
 import { api } from '@/lib/api'
 import { useT } from '@/stores/uiStore'
 import type { Hardware, Profile } from '@shared/flags/types.js'
@@ -47,6 +49,10 @@ export function Models(): JSX.Element {
     void rescan()
   }, [rescan])
 
+  // A file that has just landed is a model the folder did not have a
+  // moment ago; the list refreshes itself rather than waiting for a click.
+  const downloads = useDownloads(() => void rescan())
+
   const models = scan?.models ?? []
 
   return (
@@ -88,13 +94,13 @@ export function Models(): JSX.Element {
         />
       </div>
 
+      {/* Above both tabs: a search for the next model must not hide the
+          one on its way. */}
+      <DownloadsPanel jobs={downloads} />
+
       {tab === 'hf' ? (
         <div className="mt-6">
-          <HuggingFace
-            hardware={hardware}
-            profile={profile}
-            onDownloaded={rescan}
-          />
+          <HuggingFace hardware={hardware} profile={profile} downloads={downloads} />
         </div>
       ) : (
         <>
