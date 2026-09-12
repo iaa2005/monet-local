@@ -394,6 +394,22 @@
  * one gradient does the whole job. Chromium is what Electron runs; the
  * -webkit- copies are for anything else that opens this file.
  */
+/*
+ * Opaque under the bar, and only then frosted. The blur alone was the whole
+ * plate once, and on an Intel Arc laptop the compositor drew none of it: the
+ * context ladder showed straight through the pinned verdict. So the page
+ * colour is painted solid down to where the bar ends and let go over the
+ * last 40px; the backdrop blur below is a finish on that fade where the GPU
+ * renders it, and nothing is lost where it does not.
+ */
+.glass-plate {
+  background: linear-gradient(
+    to bottom,
+    var(--background) calc(100% - 40px),
+    transparent 100%
+  );
+}
+
 .glass-plate::before,
 .glass-plate::after {
   content: '';

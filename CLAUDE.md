@@ -323,10 +323,12 @@ passes that div's height (measured: 802px above the viewport). And the scroll
 container is `<main>`, not the window, so the IntersectionObserver that asks
 "is the card still visible" is rooted there.
 
-The pinned bar's glass is a plate that BLURS and does not tint. A gradient of
-the page colour painted over the rows erased them; what is wanted is the rows
-still being there and out of focus. It spans the scroller's full width, and
-that width is MEASURED: `100vw` overshoots and then needs clipping, but
+The pinned bar's plate is the page colour, solid under the bar and let go
+over the last 40px, with the backdrop blur as a finish on that fade. It was a
+blur alone at first — the rows still there, out of focus — and on the Intel
+Arc laptop Chromium drew no backdrop filter at all, so the context ladder
+showed straight through the verdict. Paint first, frost second. The plate
+spans the scroller's full width, and that width is MEASURED: `100vw` overshoots and then needs clipping, but
 `overflow-x: clip` beside an `overflow-y: auto` computes to `hidden`, which
 silently makes the page horizontally scrollable by two thousand pixels of
 nothing. Centring with a transform does not land exactly either — the offset

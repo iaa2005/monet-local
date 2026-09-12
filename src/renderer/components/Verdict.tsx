@@ -207,7 +207,9 @@ export function Verdict({
             />
             <div
               className={cn(
-                'relative z-10 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border bg-card/70 px-4 py-2.5',
+                // Solid: at 70% the rows under it read through wherever the
+                // plate's blur was not drawn, and it was not drawn on Intel.
+                'relative z-10 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border bg-card px-4 py-2.5',
                 tone === 'ok' && 'border-green-border',
                 tone === 'warn' && 'border-warn/40',
                 tone === 'bad' && 'border-red-border',
