@@ -107,7 +107,8 @@ describe('catalog', () => {
       'cuda-12.4',
       'cuda-13.3',
       'rocm',
-      'sycl',
+      // SYCL came off the list on 2026-09-12: run on a Core Ultra 7 155H's
+      // Arc iGPU, b10924, and benchmarked beside Vulkan.
       'openvino',
       'opencl-adreno',
       // Nobody on the project has a Mac or a Linux box either — the rows

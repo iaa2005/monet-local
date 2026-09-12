@@ -15,14 +15,14 @@
 
 import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
-import { ddrBandwidth } from '@shared/models/speed.js'
+import { ddrBandwidth, modulesBandwidth, type MemoryModule } from '@shared/models/speed.js'
 
 const run = promisify(exec)
 
 export interface MemorySpeed {
   /** Transfers per second, in MT/s, as the modules report. */
   mtPerSecond: number
-  /** Populated modules, taken as channels. */
+  /** The bus in 64-bit channels — two for a DDR5 pair, two for a 128-bit LPDDR bus. */
   channels: number
   bytesPerSecond: number
   /** False when nothing could be read and the figure below is a default. */
@@ -51,25 +51,31 @@ async function readWindows(): Promise<MemorySpeed | null> {
   const { stdout } = await run(
     'powershell -NoProfile -NonInteractive -Command ' +
       '"Get-CimInstance Win32_PhysicalMemory | ' +
-      'Select-Object ConfiguredClockSpeed,Speed | ConvertTo-Csv -NoTypeInformation"',
+      'Select-Object ConfiguredClockSpeed,Speed,DataWidth,SMBIOSMemoryType | ' +
+      'ConvertTo-Csv -NoTypeInformation"',
   )
-  const rows = stdout
+  const modules: MemoryModule[] = stdout
     .split(/\r?\n/)
     .slice(1)
-    .map((l) => l.match(/^"?(\d*)"?,"?(\d*)"?/))
+    .map((l) => l.match(/^"?(\d*)"?,"?(\d*)"?,"?(\d*)"?,"?(\d*)"?/))
     .filter((m): m is RegExpMatchArray => !!m)
-    // The CONFIGURED rate is what the memory actually runs at; `Speed` is what
-    // the module is rated for, and an XMP kit at stock reports the two
-    // differently. Prefer the truth over the sticker.
-    .map((m) => Number(m[1]) || Number(m[2]) || 0)
-    .filter((v) => v > 0)
-  if (rows.length === 0) return null
-  const mtPerSecond = Math.min(...rows)
-  const channels = rows.length
+    .map((m) => ({
+      // The CONFIGURED rate is what the memory actually runs at; `Speed` is
+      // what the module is rated for, and an XMP kit at stock reports the
+      // two differently. Prefer the truth over the sticker.
+      mtPerSecond: Number(m[1]) || Number(m[2]) || 0,
+      ...(Number(m[3]) > 0 ? { dataWidthBits: Number(m[3]) } : {}),
+      ...(Number(m[4]) > 0 ? { smbiosType: Number(m[4]) } : {}),
+    }))
+    .filter((m) => m.mtPerSecond > 0)
+  // The width and the type are what tell eight LPDDR packages from eight
+  // DIMMs — see modulesBandwidth for the laptop that was promised 4×.
+  const bus = modulesBandwidth(modules)
+  if (!bus) return null
   return {
-    mtPerSecond,
-    channels,
-    bytesPerSecond: ddrBandwidth(mtPerSecond, channels),
+    mtPerSecond: bus.mtPerSecond,
+    channels: bus.busBits / 64,
+    bytesPerSecond: bus.bytesPerSecond,
     measured: true,
   }
 }

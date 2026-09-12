@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   activeWeightBytes,
   ddrBandwidth,
+  effectiveBandwidth,
   formatTps,
   generationTps,
+  modulesBandwidth,
   speedBand,
 } from './speed.js'
 
@@ -95,5 +97,61 @@ describe('what to call it', () => {
   it('DDR5-5600 in two channels is 89.6 GB/s', () => {
     expect(ddrBandwidth(5600) / 1e9).toBeCloseTo(89.6, 1)
     expect(ddrBandwidth(5600, 4) / 1e9).toBeCloseTo(179.2, 1)
+  })
+})
+
+describe('the bus, from what the firmware lists', () => {
+  it('sums two DDR5 SO-DIMMs into two channels', () => {
+    // The dev machine: 2×16 GB DDR5-5600, 64 bits each, SMBIOS type 34.
+    const bw = modulesBandwidth([
+      { mtPerSecond: 5600, dataWidthBits: 64, smbiosType: 34 },
+      { mtPerSecond: 5600, dataWidthBits: 64, smbiosType: 34 },
+    ])
+    expect(bw?.busBits).toBe(128)
+    expect(bw!.bytesPerSecond / 1e9).toBeCloseTo(89.6, 1)
+  })
+
+  it('does not take eight LPDDR5X packages for eight DIMMs', () => {
+    // Core Ultra 7 155H, 16 GB: Win32_PhysicalMemory lists eight 2 GiB
+    // modules at 6400 MT/s, every one claiming DataWidth 64. The chip has
+    // one 128-bit bus. Summed as DIMMs this was 409.6 GB/s and a 135M model
+    // was promised ≈1142 tok/s; llama-bench wrote 128.
+    const eight = Array.from({ length: 8 }, () => ({
+      mtPerSecond: 6400,
+      dataWidthBits: 64,
+      smbiosType: 35,
+    }))
+    const bw = modulesBandwidth(eight)
+    expect(bw?.busBits).toBe(128)
+    expect(bw!.bytesPerSecond / 1e9).toBeCloseTo(102.4, 1)
+  })
+
+  it('takes the slowest module as the pace', () => {
+    const bw = modulesBandwidth([
+      { mtPerSecond: 5600, dataWidthBits: 64 },
+      { mtPerSecond: 4800, dataWidthBits: 64 },
+    ])
+    expect(bw?.mtPerSecond).toBe(4800)
+  })
+
+  it('assumes 64 bits where the width is not reported, and nothing where no rate is', () => {
+    expect(modulesBandwidth([{ mtPerSecond: 3200 }])?.busBits).toBe(64)
+    expect(modulesBandwidth([{ mtPerSecond: 0 }])).toBeNull()
+    expect(modulesBandwidth([])).toBeNull()
+  })
+})
+
+describe('bandwidth worked back from a benchmark', () => {
+  it('is what the run got, and needs no efficiency factor', () => {
+    // 128 tok/s on 256.6 MiB of F16 weights is 34 GB/s delivered.
+    const active = 256.63 * 1024 * 1024
+    const bw = effectiveBandwidth(128.17, active)
+    expect(bw / 1e9).toBeCloseTo(34.5, 0)
+    // Predicting the same model from it gives the measurement back, not
+    // three quarters of it.
+    expect(
+      generationTps({ weightBytes: active, bandwidthBytesPerSecond: bw, bandwidthIsEffective: true }),
+    ).toBeCloseTo(128.17, 3)
+    expect(effectiveBandwidth(0, active)).toBe(0)
   })
 })

@@ -31,6 +31,31 @@ export interface Device {
 
 const DEVICE_LINE =
   /^\s*([A-Za-z]+)(\d+):\s*(.+?)\s*\((\d+)\s*MiB,\s*(\d+)\s*MiB free\)\s*$/
+
+/**
+ * Integrated GPUs, by the names their drivers give them.
+ *
+ * Only asked when the backend printed no `uma` field. SYCL on a Core Ultra
+ * laptop lists `Intel(R) Arc(TM) Graphics` and nothing about its memory —
+ * the same device Vulkan flags `uma: 1` — and without this the pack read
+ * as a discrete 9 GB card: no UMA badge, and Auto's shared-heap rule off.
+ * The discrete Intel parts carry a model number (`Arc(TM) A770`, `B580`,
+ * `Arc Pro B70`); the integrated ones are `Arc(TM) Graphics`, `Arc(TM)
+ * 140V/130V/140T`, `Iris(R) Xe`, `UHD`. AMD's are the `M`-suffixed Radeons
+ * and the bare `Radeon(TM) Graphics`.
+ */
+const INTEGRATED = [
+  /^Intel\(R\)\s+Arc\(TM\)\s+Graphics$/i,
+  /^Intel\(R\)\s+Arc\(TM\)\s+1[0-9]0[VT]\b/i,
+  /^Intel\(R\)\s+(Iris\(R\)\s+(Xe\s+|Plus\s+)?|UHD\s+|HD\s+)Graphics/i,
+  /^AMD\s+Radeon\(TM\)\s+Graphics$/i,
+  /^AMD\s+Radeon(\(TM\))?\s+\d{3}M\b/i,
+  /^AMD\s+Radeon(\(TM\))?\s+8060S\b/i,
+]
+
+export function integratedByName(name: string): boolean {
+  return INTEGRATED.some((re) => re.test(name.trim()))
+}
 const UMA_LINE = /^\s*ggml_\w+:\s*(\d+)\s*=\s*(.+?)\s*\|(.*)$/
 
 export function parseDevices(output: string): Device[] {
@@ -53,8 +78,11 @@ export function parseDevices(output: string): Device[] {
     // Metal prints no `uma` line, and does not need to: Apple silicon has
     // one memory for the GPU and the CPU, always. Leaving it undefined
     // would have the estimator add the device's memory on top of the RAM
-    // it is.
-    const known = uma.get(name) ?? (backend === 'MTL' ? true : undefined)
+    // it is. SYCL prints none either, and it runs on the same Intel iGPU
+    // that Vulkan calls `uma: 1` — so the name is asked when the banner
+    // says nothing.
+    const known =
+      uma.get(name) ?? (backend === 'MTL' || integratedByName(name) ? true : undefined)
     devices.push({
       id: `${backend}${index}`,
       backend,

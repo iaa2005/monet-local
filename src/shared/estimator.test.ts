@@ -161,12 +161,57 @@ describe('estimate — the machine as it is right now', () => {
     const busy: Hardware = { ...MACHINE, freeRamBytes: 20.6e9 }
     const live = estimate({ ...base({ ...COMMON, ctxSize: 8192 }), hardware: busy })
     expect(live.ramBudget.othersBytes).toBeCloseTo(MACHINE.totalRamBytes - 20.6e9, -6)
-    expect(live.ramBudget.reserveBytes).toBe(2 * 1024 ** 3)
-    expect(live.ramCeiling).toBeCloseTo(20.6e9 - 2 * 1024 ** 3, -6)
+    // What is free IS the ceiling; nothing further is kept back from it.
+    expect(live.ramBudget.reserveBytes).toBe(0)
+    expect(live.ramCeiling).toBeCloseTo(20.6e9, -6)
     // Idle: the fixed reserve, and no "others" figure to show.
     const idle = estimate(base({ ...COMMON, ctxSize: 8192 }))
     expect(idle.ramBudget.othersBytes).toBeUndefined()
     expect(idle.ramBudget.reserveBytes).toBe(3 * 1024 ** 3)
+  })
+
+  it('calls a small model on a full laptop tight, not impossible', () => {
+    // A Core Ultra 7 155H with 16 GB: 15.46 GiB reported, 2.03 GiB free with
+    // a browser, a chat client and WSL open. SmolLM2-135M F16 (258 MiB) at
+    // 8192 loaded and wrote at 128 tok/s on the Arc iGPU — while the screen
+    // said "will not fit" of it and of every 84 MiB file on the download
+    // list, because a two-gigabyte margin off 2.03 GiB free is a ceiling of
+    // nothing.
+    const laptop: Hardware = {
+      totalRamBytes: 16_599_281_664,
+      freeRamBytes: 2_181_820_416,
+      devices: [
+        {
+          id: 'Vulkan0',
+          name: 'Intel(R) Arc(TM) Graphics',
+          totalBytes: 9023 * 1024 * 1024,
+          freeBytes: 8316 * 1024 * 1024,
+          uma: true,
+        },
+      ],
+    }
+    const smol: ModelGeometry = { blockCount: 30, kvHeads: 3, keyLength: 64, valueLength: 64 }
+    const e = estimate({
+      fileBytes: 270_885_952,
+      geometry: smol,
+      profile: { ...COMMON, ctxSize: 8192 },
+      hardware: laptop,
+    })
+    expect(e.level).toBe('tight')
+    expect(e.ramCeiling).toBe(2_181_820_416)
+    expect(e.findings.map((f) => f.code)).toContain('ram-in-use')
+    expect(e.findings.map((f) => f.code)).not.toContain('exceeds-ram')
+
+    // And a 2.7 GB Qwen3.5-4B on the same afternoon is refused, with the
+    // browser named as the reason rather than the machine.
+    const qwen = estimate({
+      fileBytes: 2_900_000_000,
+      geometry: { blockCount: 32, kvHeads: 4, keyLength: 256, valueLength: 256, fullAttentionInterval: 4 },
+      profile: { ...COMMON, ctxSize: 8192 },
+      hardware: laptop,
+    })
+    expect(qwen.level).toBe('wont_fit')
+    expect(qwen.findings.map((f) => f.code)).toContain('ram-in-use')
   })
 
   it('changes nothing when nobody measured', () => {

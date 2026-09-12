@@ -34,14 +34,28 @@ export interface Hardware {
    */
   freeRamBytes?: number
   /**
-   * Memory bandwidth, bytes per second — read from the modules where the
-   * firmware says, assumed otherwise (`memoryBandwidthMeasured`).
+   * Memory bandwidth, bytes per second — the figure predictions divide by.
+   *
+   * Where a benchmark has run on the active runtime it is what that run
+   * DELIVERED (`memoryBandwidth.source = 'benchmark'`, and then
+   * `memoryBandwidthIsEffective`); otherwise it is the bus the firmware
+   * describes, or an assumption when it describes nothing.
    *
    * Generation speed is this number divided by what a token reads, and
    * nothing else. See @shared/models/speed.
    */
   memoryBandwidthBytesPerSecond?: number
+  /** True unless the figure is the built-in assumption. */
   memoryBandwidthMeasured?: boolean
+  /** The efficiency of a real run is already in the figure above. */
+  memoryBandwidthIsEffective?: boolean
+  memoryBandwidth?: {
+    source: 'benchmark' | 'firmware' | 'assumed'
+    /** The bus as the modules describe it, whatever the source above. */
+    theoreticalBytesPerSecond: number
+    /** The run the figure came from, when a benchmark measured it. */
+    benchmark?: { modelName: string; runtimeLabel: string; genTps: number; at: string }
+  }
   devices: {
     id: string
     name: string

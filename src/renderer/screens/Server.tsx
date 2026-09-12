@@ -260,11 +260,20 @@ export function Server(): JSX.Element {
         ...(m.expertCount ? { expertCount: m.expertCount } : {}),
         ...(m.expertUsedCount ? { expertUsedCount: m.expertUsedCount } : {}),
         bandwidthBytesPerSecond: bandwidth,
+        // A benchmarked figure is what the runtime delivered; the modules'
+        // figure is a bus that a run reaches three quarters of.
+        bandwidthIsEffective: hardware.memoryBandwidthIsEffective ?? false,
       }
       const tps = generationTps(input)
-      return { tps, band: speedBand(tps), activeBytes: activeWeightBytes(input), bandwidth }
+      return {
+        tps,
+        band: speedBand(tps),
+        activeBytes: activeWeightBytes(input),
+        bandwidth,
+        source: hardware.memoryBandwidth,
+      }
     },
-    [hardware.memoryBandwidthBytesPerSecond],
+    [hardware.memoryBandwidthBytesPerSecond, hardware.memoryBandwidthIsEffective, hardware.memoryBandwidth],
   )
 
   const chosen = models.find((m) => m.id === selected)
@@ -722,15 +731,30 @@ function count(n: number): string {
 function Speed({
   s,
 }: {
-  s: { tps: number; band: 'fast' | 'usable' | 'slow'; activeBytes: number; bandwidth: number } | null
+  s: {
+    tps: number
+    band: 'fast' | 'usable' | 'slow'
+    activeBytes: number
+    bandwidth: number
+    source: Hardware['memoryBandwidth']
+  } | null
 }): JSX.Element | null {
   const t = useT()
   if (!s) return null
+  // Where the bandwidth came from is the difference between a measurement
+  // and a guess, and the tooltip is where the arithmetic is checked.
+  const from =
+    s.source?.source === 'benchmark' && s.source.benchmark
+      ? `${t('server.speedMeasured')} ${s.source.benchmark.modelName} · ${s.source.benchmark.runtimeLabel}`
+      : s.source?.source === 'firmware'
+        ? t('server.speedGuess')
+        : t('server.speedAssumed')
   const why =
     `${t('server.speedTitle')}: ${t(`server.speed.${s.band}` as StringKey)}
 ` +
     `${t('server.speedWhy')} ${bytes(s.activeBytes, 1)}; ` +
-    `${t('server.speedBandwidth')} ${bytes(s.bandwidth, 0)}/s`
+    `${t('server.speedBandwidth')} ${bytes(s.bandwidth, 0)}/s
+${from}`
   return (
     <Badge tone={s.band === 'fast' ? 'ok' : s.band === 'usable' ? undefined : 'warn'} title={why}>
       ≈{formatTps(s.tps)}

@@ -1,7 +1,9 @@
 import { ipcMain } from 'electron'
 import type { Profile } from '@shared/flags/types.js'
 import { downloadUrl, rankRepos, repoContents, type HfRepo, type HfSibling } from '@shared/hf.js'
+import { activeWeightBytes, effectiveBandwidth } from '@shared/models/speed.js'
 import { benchHistory, runBench } from '../bench/run.js'
+import { recordBandwidth } from '../app/bandwidth-store.js'
 import { getMainWindow } from '../app/main-window.js'
 import { readSettings } from '../app/settings-store.js'
 import { downloadModel, pendingDownloads } from '../models/download.js'
@@ -47,7 +49,7 @@ export function registerBenchIpc(): void {
         readSettings().modelFolders.map((f) => f.path),
       ).models.find((m) => m.id === modelId)
       if (!model) throw new Error(`unknown model ${modelId}`)
-      return runBench(
+      const run = await runBench(
         pack.benchPath,
         modelId,
         model.path,
@@ -55,6 +57,29 @@ export function registerBenchIpc(): void {
         profile,
         opts ?? {},
       )
+      // The run knows what this runtime's memory delivers, which nothing
+      // else does; keep it, and every speed on the Server screen is divided
+      // by a measurement from then on. Needs the tensor table: without it
+      // there is no "bytes per token" to multiply by.
+      if (run.result.genTps && model.weightBytes) {
+        const active = activeWeightBytes({
+          weightBytes: model.weightBytes,
+          ...(model.expertBytes ? { expertBytes: model.expertBytes } : {}),
+          ...(model.expertCount ? { expertCount: model.expertCount } : {}),
+          ...(model.expertUsedCount ? { expertUsedCount: model.expertUsedCount } : {}),
+          bandwidthBytesPerSecond: 0,
+        })
+        recordBandwidth(pack.id, {
+          bytesPerSecond: effectiveBandwidth(run.result.genTps, active),
+          genTps: run.result.genTps,
+          activeBytes: active,
+          modelId,
+          modelName: `${model.displayName} ${model.quant}`.trim(),
+          runtimeLabel: pack.label,
+          at: run.result.ran,
+        })
+      }
+      return run
     },
   )
 

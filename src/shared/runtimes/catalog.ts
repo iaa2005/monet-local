@@ -117,10 +117,11 @@ export const BACKENDS: BackendSpec[] = [
     asset: 'llama-{build}-bin-win-sycl-x64.zip',
     platform: 'win32',
     arch: 'x64',
-    untested: true,
+    // Run on a Core Ultra 7 155H's Arc iGPU (b10924): the zip carries the
+    // oneAPI runtime (sycl8, ur_*, oneMKL, oneDNN), nothing to install.
     note: {
-      en: 'Intel GPUs. Needs the oneAPI runtime installed separately.',
-      ru: 'Видеокарты Intel. Нужен отдельно установленный oneAPI runtime.',
+      en: 'Intel GPUs. The oneAPI runtime ships in the zip; Vulkan is usually as fast on an iGPU.',
+      ru: 'Видеокарты Intel. oneAPI runtime лежит в архиве; на встроенной Vulkan обычно не медленнее.',
     },
   },
   {

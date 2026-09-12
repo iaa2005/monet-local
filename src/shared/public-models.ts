@@ -158,6 +158,7 @@ export function publicModels(
             ...(m.expertCount ? { expertCount: m.expertCount } : {}),
             ...(m.expertUsedCount ? { expertUsedCount: m.expertUsedCount } : {}),
             bandwidthBytesPerSecond: bandwidth,
+            bandwidthIsEffective: hardware.memoryBandwidthIsEffective ?? false,
           }
         : null
     const active = speedInput ? Math.round(activeWeightBytes(speedInput)) : null

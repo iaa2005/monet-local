@@ -142,7 +142,11 @@ export function Verdict({
         ...(e.ramBudget.othersBytes !== undefined
           ? [`− ${bytes(e.ramBudget.othersBytes, 1)} ${t('verdict.others')}`]
           : []),
-        `− ${bytes(e.ramBudget.reserveBytes, 1)} ${t('verdict.reserve')}`,
+        // Nothing is kept back from a live measurement; "− 0 B kept back"
+        // would only invite the question of what the zero was for.
+        ...(e.ramBudget.reserveBytes > 0
+          ? [`− ${bytes(e.ramBudget.reserveBytes, 1)} ${t('verdict.reserve')}`]
+          : []),
         `= ${bytes(e.ramCeiling, 1)}`,
       ].join(' '),
       parts: [

@@ -24,6 +24,7 @@ import { readSettings } from '../app/settings-store.js'
 import { scanFolders } from '../models/library.js'
 import type { ModelInfo } from '../models/describe.js'
 import { listInstalled, pickDefault } from '../runtimes/manager.js'
+import { measuredBandwidth } from '../app/bandwidth-store.js'
 import { memorySpeed, memorySpeedNow } from '../app/memory-speed.js'
 import { findStrays, killStray, ownedRssBytes } from '../server/orphans.js'
 import { Gateway } from '../server/gateway.js'
@@ -93,9 +94,55 @@ export function hardware(): Hardware {
     // A machine with a browser and a chat client open still has less to
     // give than its total minus a fixed reserve; that part stays.
     freeRamBytes: freemem() + ownRssBytes,
-    memoryBandwidthBytesPerSecond: memorySpeedNow().bytesPerSecond,
-    memoryBandwidthMeasured: memorySpeedNow().measured,
+    ...bandwidthNow(),
     devices: activePack()?.devices ?? [],
+  }
+}
+
+/**
+ * The bandwidth predictions divide by, and where it came from.
+ *
+ * A benchmark on the active runtime beats the modules: it is what THIS
+ * backend on THIS GPU delivered, efficiency included, where the modules
+ * describe a bus that may be read wrong (LPDDR) and is never reached in
+ * full. The theoretical figure is kept beside it for the Benchmark screen's
+ * ceiling, which is a first-principles number by design.
+ */
+function bandwidthNow(): Pick<
+  Hardware,
+  | 'memoryBandwidthBytesPerSecond'
+  | 'memoryBandwidthMeasured'
+  | 'memoryBandwidthIsEffective'
+  | 'memoryBandwidth'
+> {
+  const bus = memorySpeedNow()
+  const pack = activePack()
+  const run = pack ? measuredBandwidth(pack.id) : undefined
+  if (run) {
+    return {
+      memoryBandwidthBytesPerSecond: run.bytesPerSecond,
+      memoryBandwidthMeasured: true,
+      memoryBandwidthIsEffective: true,
+      memoryBandwidth: {
+        source: 'benchmark',
+        theoreticalBytesPerSecond: bus.bytesPerSecond,
+        benchmark: {
+          modelName: run.modelName,
+          runtimeLabel: run.runtimeLabel,
+          genTps: run.genTps,
+          at: run.at,
+        },
+      },
+    }
+  }
+  return {
+    memoryBandwidthBytesPerSecond: bus.bytesPerSecond,
+    memoryBandwidthMeasured: bus.measured,
+    memoryBandwidthIsEffective: false,
+    memoryBandwidth: {
+      source: bus.measured ? 'firmware' : 'assumed',
+      theoreticalBytesPerSecond: bus.bytesPerSecond,
+    },
   }
 }
 

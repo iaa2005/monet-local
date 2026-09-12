@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { hasUsableDevice, parseDevices } from './devices.js'
+import { hasUsableDevice, integratedByName, parseDevices } from './devices.js'
 
 /** Verbatim from this machine, b10826 Vulkan. */
 const VULKAN_780M = `load_backend: loaded RPC backend from D:\\Colibri\\llamacpp\\ggml-rpc.dll
@@ -65,5 +65,52 @@ Available devices:`
     expect(parseDevices(cpuOnly)).toEqual([])
     expect(hasUsableDevice(parseDevices(cpuOnly))).toBe(false)
     expect(hasUsableDevice(parseDevices(VULKAN_780M))).toBe(true)
+  })
+})
+
+/**
+ * Verbatim from a Core Ultra 7 155H, b10924 SYCL. No banner line, no `uma`
+ * field — the same Intel Arc iGPU that the Vulkan pack calls `uma: 1`.
+ */
+const SYCL_ARC_IGPU = `Warning: zesInit failed [ggml_check_sycl] with code 2013265921. Sysman free-memory query may be unavailable.
+Available devices:
+Warning: zesInit failed with code 2013265921. Sysman free-memory query may be unavailable.
+  SYCL0: Intel(R) Arc(TM) Graphics (9023 MiB, 7730 MiB free)`
+
+describe('integrated GPUs that do not say so', () => {
+  it('reads the SYCL pack on an Intel laptop as shared memory', () => {
+    // Without this the SYCL pack showed no UMA badge beside a 9 GiB
+    // "card" that is a slice of the 16 GB the laptop has.
+    const [d] = parseDevices(SYCL_ARC_IGPU)
+    expect(d?.id).toBe('SYCL0')
+    expect(d?.uma).toBe(true)
+    expect(d?.totalBytes).toBe(9023 * 1024 * 1024)
+  })
+
+  it('knows the integrated names and leaves the discrete ones alone', () => {
+    for (const name of [
+      'Intel(R) Arc(TM) Graphics',
+      'Intel(R) Arc(TM) 140V GPU (16GB)',
+      'Intel(R) Iris(R) Xe Graphics',
+      'Intel(R) UHD Graphics 770',
+      'AMD Radeon 780M Graphics',
+      'AMD Radeon(TM) Graphics',
+      'AMD Radeon 8060S Graphics',
+    ])
+      expect(integratedByName(name), name).toBe(true)
+    for (const name of [
+      'Intel(R) Arc(TM) A770 Graphics',
+      'Intel(R) Arc(TM) B580 Graphics',
+      'Intel(R) Arc(TM) Pro B70 Graphics',
+      'AMD Radeon RX 7900 XTX',
+      'NVIDIA GeForce RTX 4090',
+    ])
+      expect(integratedByName(name), name).toBe(false)
+    // The banner, when there is one, wins: a Vulkan line saying `uma: 0`
+    // is not overruled by a name.
+    const d = parseDevices(`ggml_vulkan: 0 = Intel(R) Arc(TM) Graphics (Intel Corporation) | uma: 0 | fp16: 1
+Available devices:
+  Vulkan0: Intel(R) Arc(TM) Graphics (9023 MiB, 8316 MiB free)`)
+    expect(d[0]?.uma).toBe(false)
   })
 })

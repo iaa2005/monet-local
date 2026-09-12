@@ -36,17 +36,25 @@ const OS_RESERVE = 3 * GiB
 const TIGHT_MARGIN = 2 * GiB
 
 /**
- * Kept back from what is free at the moment of asking.
+ * What is free at the moment of asking is a ceiling of its own.
  *
  * The fixed reserve above is what this box needs at idle. It is not what
  * the box is using while a chat client, a browser and an editor are open —
  * measured at 7 GB the evening Auto picked a 128K context for the Q4_K_M
  * and the projector could not get 3.5 MB of device memory. On a shared-
  * memory GPU the "device" heap is this same RAM, so the two ceilings are one
- * ceiling, and the lower of them is the real one. Two gigabytes on top of
- * what is free leaves room for the cache to fill and the OS to breathe.
+ * ceiling, and the lower of them is the real one.
+ *
+ * The live figure is used AS IT IS, with the tight band below it rather
+ * than a second margin taken off it. The first version kept two gigabytes
+ * back from what was free, and on a 16 GB laptop running a browser, a
+ * chat client and WSL — 2.0 GiB free of 15.5 — that left a ceiling of
+ * zero bytes: every file on the download screen, an 84 MiB one included,
+ * read "will not fit", while the 258 MiB model it was said of was loaded
+ * and writing at a hundred tokens a second. The cache and the buffers are
+ * already in the total; there is nothing left for the margin to protect
+ * against that "tight" does not already say.
  */
-const LIVE_MARGIN = 2 * GiB
 
 /**
  * Repacking keeps a second, SIMD-friendly copy of the quantised weights.
@@ -124,6 +132,7 @@ export interface Estimate {
     totalBytes: number
     /** Held by everything that is not this app's own model server. */
     othersBytes?: number
+    /** Zero when the ceiling is what is free right now: nothing else is kept back. */
     reserveBytes: number
   }
   headroomBytes: number
@@ -191,21 +200,18 @@ export function estimate(input: EstimateInput): Estimate {
   const totalBytes = weightsBytes + kvBytes + compute
   const fixedCeiling = Math.max(0, hw.totalRamBytes - OS_RESERVE)
   const liveCeiling =
-    hw.freeRamBytes !== undefined
-      ? Math.max(0, hw.freeRamBytes - LIVE_MARGIN)
-      : undefined
-  const ramCeiling =
-    liveCeiling !== undefined ? Math.min(fixedCeiling, liveCeiling) : fixedCeiling
-  // Which of the two ceilings applied decides which reserve is shown: the
-  // idle reserve when the machine is idle, the live margin when it is not.
-  const ramBudget: Estimate['ramBudget'] =
-    liveCeiling !== undefined && liveCeiling < fixedCeiling
-      ? {
-          totalBytes: hw.totalRamBytes,
-          othersBytes: Math.max(0, hw.totalRamBytes - (hw.freeRamBytes ?? hw.totalRamBytes)),
-          reserveBytes: LIVE_MARGIN,
-        }
-      : { totalBytes: hw.totalRamBytes, reserveBytes: OS_RESERVE }
+    hw.freeRamBytes !== undefined ? Math.max(0, hw.freeRamBytes) : undefined
+  const busy = liveCeiling !== undefined && liveCeiling < fixedCeiling
+  const ramCeiling = busy ? liveCeiling : fixedCeiling
+  // Which of the two ceilings applied decides what the bar spells out: the
+  // idle reserve when the machine is idle, what others hold when it is not.
+  const ramBudget: Estimate['ramBudget'] = busy
+    ? {
+        totalBytes: hw.totalRamBytes,
+        othersBytes: Math.max(0, hw.totalRamBytes - (hw.freeRamBytes ?? hw.totalRamBytes)),
+        reserveBytes: 0,
+      }
+    : { totalBytes: hw.totalRamBytes, reserveBytes: OS_RESERVE }
   const headroomBytes = ramCeiling - totalBytes
 
   const findings: Finding[] = []
@@ -221,18 +227,19 @@ export function estimate(input: EstimateInput): Estimate {
   if (headroomBytes < 0) {
     level = 'wont_fit'
     findings.push({ code: 'exceeds-ram', bytes: -headroomBytes })
-    // Say WHICH wall it was. "Exceeds RAM" on a machine with room to spare
-    // sends someone to buy memory; "other programs are using it" sends
-    // them to close a browser.
-    if (liveCeiling !== undefined && liveCeiling < fixedCeiling) {
-      findings.push({
-        code: 'ram-in-use',
-        bytes: hw.totalRamBytes - (hw.freeRamBytes ?? hw.totalRamBytes),
-      })
-    }
   } else if (headroomBytes < TIGHT_MARGIN) {
     level = 'tight'
     findings.push({ code: 'tight', bytes: headroomBytes })
+  }
+  // Say WHICH wall it was. "Exceeds RAM" on a machine with room to spare
+  // sends someone to buy memory; "other programs are using it" sends them
+  // to close a browser. Said for "tight" as well: on the full laptop above
+  // the slack is whatever the browser left, and that is worth knowing.
+  if (level !== 'fits' && busy) {
+    findings.push({
+      code: 'ram-in-use',
+      bytes: hw.totalRamBytes - (hw.freeRamBytes ?? hw.totalRamBytes),
+    })
   }
 
   // The device wall. Only meaningful while something is actually on the GPU:

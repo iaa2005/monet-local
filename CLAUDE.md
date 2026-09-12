@@ -101,6 +101,31 @@ Privacy & security -> For developers) makes the full build work locally too.
   added. Verdicts on iGPU use total RAM as the ceiling.
 - **Model ids are stable slugs** from the filename (`qwen3.8-27b-q4_k_m`);
   they are what clients put in `model`. Do not use paths or display names.
+- **What is free is the ceiling; nothing more is kept back from it.** The
+  estimator once took 2 GiB off the live free figure, and on a 16 GB laptop
+  with a browser, a chat client and WSL open (2.0 GiB free of 15.5) that
+  made a ceiling of 0 B: every 84 MiB file on the download list read "will
+  not fit" while a 258 MiB model was loaded and writing. The cache and the
+  buffers are already in the total; "tight" is what the last two gigabytes
+  mean, and `ram-in-use` names the browser either way.
+- **Eight LPDDR packages are not eight DIMMs.** `Win32_PhysicalMemory` on a
+  Core Ultra 7 155H lists eight 2 GiB modules, each claiming a 64-bit data
+  width, for one 128-bit LPDDR5X-6400 bus. Summed as channels that was
+  409.6 GB/s — four times the real 102.4 — and a 135M model was promised
+  ≈1142 tok/s that llama-bench then wrote at 128. `modulesBandwidth` caps
+  LPDDR (SMBIOS type 27–30, 35) at a 128-bit bus.
+- **A benchmark is the bandwidth.** Every llama-bench run records what it
+  delivered (generation × bytes per token) per runtime pack in
+  `bandwidth.json`, and predictions on that pack divide by it from then on
+  (`memoryBandwidthIsEffective`, no efficiency factor). The same Intel iGPU
+  writes at different speeds under Vulkan and SYCL; the modules cannot know
+  that, a run can. The larger of what is known and what a run got is kept —
+  a tiny model is latency-bound and reads far under the bus.
+- **SYCL prints no `uma` field.** The same `Intel(R) Arc(TM) Graphics` that
+  Vulkan flags `uma: 1` arrived from the SYCL pack as a discrete 9 GB card:
+  no UMA badge, Auto's shared-heap rule off. `integratedByName` fills the
+  bit from the driver's name when the banner says nothing; a banner that
+  does say wins.
 
 ## Style
 
@@ -120,7 +145,9 @@ named after the one thing they do. Pure functions in `src/shared` and
 
 ## Testing without CUDA / other hardware
 
-Dev machine: Ryzen 7840HS + Radeon 780M (Vulkan, UMA). Other backends are
+Dev machines: Ryzen 7840HS + Radeon 780M (Vulkan, UMA), and a Core Ultra 7
+155H + Intel Arc iGPU (Vulkan and SYCL, UMA, 16 GB LPDDR5X) — the second is
+where the LPDDR, live-ceiling and SYCL rules above came from. Other backends are
 exercised through the same backend-agnostic RuntimeManager with recorded
 `--list-devices` fixtures and the recorded release JSON. Mark such packs
 "untested" in the UI until a user confirms them.

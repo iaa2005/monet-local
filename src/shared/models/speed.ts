@@ -35,6 +35,68 @@ export function ddrBandwidth(mtPerSecond: number, channels = 2): number {
   return channels * 8 * mtPerSecond * 1e6
 }
 
+/** One populated module, as the firmware's SMBIOS table describes it. */
+export interface MemoryModule {
+  /** The configured transfer rate, MT/s. */
+  mtPerSecond: number
+  /** SMBIOS "data width" in bits, when reported. */
+  dataWidthBits?: number
+  /** SMBIOS type 17 "memory type": 26 DDR4, 34 DDR5, 35 LPDDR5 … */
+  smbiosType?: number
+}
+
+/** The LPDDR generations, by SMBIOS memory-type code. */
+const LPDDR_TYPES = new Set([27, 28, 29, 30, 35])
+
+/**
+ * The whole bus of a laptop with soldered LPDDR, in bits.
+ *
+ * Every x86 laptop with LPDDR5/5X this app is likely to meet — Meteor Lake,
+ * Lunar Lake, Arrow Lake H, Strix Point — puts the packages on a 128-bit
+ * bus. Strix Halo's 256-bit is the exception, and it will be UNDER-promised
+ * here by half, which is the direction to be wrong in.
+ */
+const LPDDR_BUS_BITS = 128
+
+/**
+ * Theoretical bandwidth from the modules the firmware lists.
+ *
+ * A DIMM is 64 bits wide and the sum of the modules IS the bus. LPDDR is
+ * not a DIMM: a Core Ultra 7 155H lists EIGHT modules of 2 GiB, each
+ * claiming a 64-bit data width, for what is one 128-bit bus of LPDDR5X-6400.
+ * Summed as DIMMs that came to 409.6 GB/s — four times the real 102.4 —
+ * and every model on the screen was promised four times the speed it has
+ * (≈1142 tok/s for a 135M model that llama-bench then wrote at 128). So on
+ * LPDDR the sum is capped at the bus the platform actually has.
+ */
+export function modulesBandwidth(
+  modules: MemoryModule[],
+): { mtPerSecond: number; busBits: number; bytesPerSecond: number } | null {
+  const rates = modules.map((m) => m.mtPerSecond).filter((v) => v > 0)
+  if (rates.length === 0) return null
+  // The slowest module sets the pace of every channel it shares a bus with.
+  const mtPerSecond = Math.min(...rates)
+  let busBits = modules.reduce(
+    (n, m) => n + (m.dataWidthBits && m.dataWidthBits > 0 ? m.dataWidthBits : 64),
+    0,
+  )
+  const lpddr = modules.some((m) => m.smbiosType !== undefined && LPDDR_TYPES.has(m.smbiosType))
+  if (lpddr && busBits > LPDDR_BUS_BITS) busBits = LPDDR_BUS_BITS
+  return { mtPerSecond, busBits, bytesPerSecond: (mtPerSecond * 1e6 * busBits) / 8 }
+}
+
+/**
+ * What the memory ACTUALLY delivered, worked back from a benchmark.
+ *
+ * A generation figure from llama-bench times the bytes every token read is
+ * the bandwidth the run got — efficiency, backend and driver all included.
+ * It is the number to predict other models from on the same runtime, and
+ * it needs no efficiency factor: it already is one.
+ */
+export function effectiveBandwidth(genTps: number, activeBytes: number): number {
+  return genTps > 0 && activeBytes > 0 ? genTps * activeBytes : 0
+}
+
 /**
  * The share of theoretical bandwidth a real inference run reaches.
  *
@@ -57,8 +119,13 @@ export interface SpeedInput {
   /** `{arch}.expert_count` and `.expert_used_count`, when the model is MoE. */
   expertCount?: number
   expertUsedCount?: number
-  /** Theoretical memory bandwidth, bytes per second. */
+  /** Memory bandwidth, bytes per second — theoretical unless said otherwise. */
   bandwidthBytesPerSecond: number
+  /**
+   * The bandwidth above was measured by a benchmark on this runtime, not
+   * read off the modules, so the efficiency factor is already in it.
+   */
+  bandwidthIsEffective?: boolean
 }
 
 /**
@@ -84,7 +151,10 @@ export function activeWeightBytes(input: SpeedInput): number {
 export function generationTps(input: SpeedInput): number {
   const active = activeWeightBytes(input)
   if (active <= 0) return 0
-  return (input.bandwidthBytesPerSecond * EFFICIENCY) / active
+  const usable = input.bandwidthIsEffective
+    ? input.bandwidthBytesPerSecond
+    : input.bandwidthBytesPerSecond * EFFICIENCY
+  return usable / active
 }
 
 /**

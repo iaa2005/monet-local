@@ -25,13 +25,19 @@ export function Benchmark(): JSX.Element {
   const [history, setHistory] = useState<StoredRun[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // The bus this machine has, for the ceiling: a constant here was the dev
+  // box's DDR5-5600, shown as "what the hardware allows" on every other
+  // machine too.
+  const [bus, setBus] = useState<number>(DDR5_5600_DUAL)
 
   const refresh = useCallback(async () => {
-    const [scan, p, h] = await Promise.all([
+    const [scan, p, h, hw] = await Promise.all([
       api()?.models.scan(),
       api()?.profiles.get(),
       api()?.bench.history(),
+      api()?.server.hardware(),
     ])
+    if (hw?.memoryBandwidth) setBus(hw.memoryBandwidth.theoreticalBytesPerSecond)
     if (scan) {
       setModels(scan.models)
       setModelId((cur) => cur || (scan.models[0]?.id ?? ''))
@@ -165,7 +171,7 @@ export function Benchmark(): JSX.Element {
           <div className="rounded-xl border border-border bg-card px-4 py-3">
             <Stat
               label={t('bench.ceiling')}
-              value={bandwidthCeiling(model.sizeBytes, DDR5_5600_DUAL).toFixed(1)}
+              value={bandwidthCeiling(model.sizeBytes, bus).toFixed(1)}
               unit="tok/s"
               hint={model.moe ? t('bench.ceilingMoe') : t('bench.ceilingDense')}
               tone={model.moe ? 'warn' : undefined}
