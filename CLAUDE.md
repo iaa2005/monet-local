@@ -137,6 +137,16 @@ Privacy & security -> For developers) makes the full build work locally too.
   page to disk" when the estimator's RAM verdict is a refusal. Measure
   with the servers actually stopped between runs: six of them left alive by
   a probe script produced a set of numbers that meant nothing.
+- **Updates are offered, never performed unasked.** `app/updater.ts`
+  (ported from Code Monet) checks GitHub Releases on start and every four
+  hours, and every step is a state the renderer sees: available →
+  downloading → ready → or error with the reason. The sidebar pill offers
+  the download; Settings → About has the manual check with "up to date" as
+  a real answer. Load electron-updater through `default` as well as the
+  named export: it is CommonJS behind a getter, and in a packaged build the
+  bare named import is undefined — Code Monet shipped a release that never
+  checked because of exactly that. Nothing in 0.1.0–0.1.2 called the
+  updater at all, so those installs must be updated by hand once.
 
 ## Style
 

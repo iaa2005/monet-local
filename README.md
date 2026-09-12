@@ -43,7 +43,10 @@ measured against each other with the memory-bandwidth ceiling shown beside
 them, and a downloader that resumes and never lands a partial file in a model
 folder.
 
-Next: M6 — updater, polish, and the first release.
+**M6 — updater and the first releases. Done.** Releases are built and
+published by CI on every `v*` tag; the app checks the feed on start and every
+four hours, offers the download in the sidebar, and installs on relaunch or on
+the next quit. Settings → About has the manual check.
 
 ## Develop
 

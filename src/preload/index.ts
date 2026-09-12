@@ -14,6 +14,7 @@ import type { StrayProcess } from '@main/server/orphans.js'
 import type { StoredRun } from '@main/bench/run.js'
 import type { HfFile, HfRepo } from '@shared/hf.js'
 import type { DownloadProgress, DownloadResult } from '@main/models/download.js'
+import type { UpdateState } from '@main/app/updater.js'
 
 export interface RuntimeState {
   installed: InstalledPack[]
@@ -254,6 +255,25 @@ const api = {
      * a new one if it shares one, the existing one if it is its own. */
     auto: (modelId: string): Promise<AutoProfileResult> =>
       ipcRenderer.invoke('profiles:auto', modelId),
+  },
+
+  /**
+   * Where the update stands: idle / checking / available / downloading /
+   * ready / error. Nothing downloads until download() is called.
+   */
+  updates: {
+    state: (): Promise<UpdateState> => ipcRenderer.invoke('update:state'),
+    /** The version running right now. */
+    currentVersion: (): Promise<string> => ipcRenderer.invoke('update:current'),
+    check: (): Promise<UpdateState> => ipcRenderer.invoke('update:check'),
+    download: (): Promise<UpdateState> => ipcRenderer.invoke('update:download'),
+    /** Relaunch into the downloaded version (it also installs on quit). */
+    install: (): Promise<void> => ipcRenderer.invoke('update:install'),
+    onState: (cb: (state: UpdateState) => void): (() => void) => {
+      const h = (_e: unknown, s: UpdateState): void => cb(s)
+      ipcRenderer.on('update:state', h)
+      return () => ipcRenderer.off('update:state', h)
+    },
   },
 
   prefs: {

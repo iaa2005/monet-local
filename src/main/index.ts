@@ -83,6 +83,11 @@ if (!app.requestSingleInstanceLock()) {
 
   void app.whenReady().then(() => {
     registerIpc()
+    // Lazily: electron-updater reads app-update.yml when it loads, and a
+    // dev run has none. The handlers register either way.
+    void import('./app/updater.js')
+      .then((m) => m.startAutoUpdater())
+      .catch((err: unknown) => console.warn('[updater] not started:', err))
     createWindow()
     nativeTheme.on('updated', () => {
       const prefs = readPrefs()

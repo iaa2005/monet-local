@@ -8,6 +8,7 @@ import {
   Settings as SettingsIcon,
   type LucideIcon,
 } from 'lucide-react'
+import { UpdatePill } from '@/components/UpdatePill'
 import { cn } from '@/lib/utils'
 import { useT, useUi, type ScreenId } from '@/stores/uiStore'
 import type { StringKey } from '@shared/i18n.js'
@@ -67,6 +68,9 @@ export function Sidebar(): JSX.Element {
     <nav className="flex w-[190px] shrink-0 flex-col gap-0.5 border-r border-sidebar-border bg-sidebar p-2">
       {ITEMS.map(item)}
       <div className="flex-1" />
+      {/* Above the handbook, below everything that acts on the machine:
+          an update is offered here and never installed unasked. */}
+      <UpdatePill />
       {FOOT.map(item)}
     </nav>
   )
