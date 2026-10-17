@@ -35,7 +35,10 @@ let upstreamSawHangup = false
 
 const gateway = new Gateway(GATEWAY_PORT, {
   router: () => routerStub,
-  models: () => [{ id: 'loaded-one' }, { id: 'sitting-there' }],
+  models: () => [
+    { id: 'loaded-one', context_configured: 131072, context_max: 262144 },
+    { id: 'sitting-there', context_configured: 65536, context_max: 131072 },
+  ],
   info: () => ({ name: 'Monet Local', capabilities: { anthropic: true } }),
   apiKey: () => apiKey,
   networkAccess: () => false,
@@ -127,9 +130,20 @@ describe('gateway — the OpenAI and Anthropic side', () => {
     // A dropdown full of models whose first request would be refused is
     // worse than a short list.
     const body = (await (await fetch(url('/v1/models'))).json()) as {
-      data: { id: string }[]
+      data: { id: string; context_length?: number }[]
     }
     expect(body.data.map((m) => m.id)).toEqual(['loaded-one'])
+  })
+
+  it('publishes the configured context, not the advertised one', async () => {
+    // A client that budgets against the model's 262144 walks into the
+    // profile's 131072 and gets a 400 at token 131073. The field is the
+    // ecosystem's `context_length` (OpenRouter's name), which is what
+    // OpenAI-compatible clients read when they read one at all.
+    const body = (await (await fetch(url('/v1/models'))).json()) as {
+      data: { id: string; context_length?: number }[]
+    }
+    expect(body.data[0]?.context_length).toBe(131072)
   })
 
   it('passes a stream through in pieces, not in one lump', async () => {

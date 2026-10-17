@@ -177,13 +177,31 @@ export class Gateway {
     if (req.method === 'GET' && (req.url ?? '').startsWith('/v1/models')) {
       const status = await router.status()
       const loaded = status.models.filter((m) => m.status === 'loaded')
+      // The context a client should budget against is the one the profile
+      // actually gives the model, not the one it advertises: a 131072-token
+      // model on a 65536 profile refuses the 65537th token. OpenAI itself has
+      // no such field, but the OpenAI-compatible ecosystem calls it
+      // `context_length` (OpenRouter does), which is what clients look for.
+      const described = new Map(
+        (this.deps.models() as {
+          id: string
+          context_configured?: number | null
+          context_max?: number | null
+        }[]).map((m) => [m.id, m]),
+      )
       json(res, 200, {
         object: 'list',
-        data: loaded.map((m) => ({
-          id: m.id,
-          object: 'model',
-          owned_by: 'monet-local',
-        })),
+        data: loaded.map((m) => {
+          const context =
+            described.get(m.id)?.context_configured ??
+            described.get(m.id)?.context_max
+          return {
+            id: m.id,
+            object: 'model',
+            owned_by: 'monet-local',
+            ...(context != null ? { context_length: context } : {}),
+          }
+        }),
       })
       return
     }
