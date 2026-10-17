@@ -83,6 +83,17 @@ beforeAll(async () => {
       return
     }
     if (req.url === '/v1/messages') {
+      if (req.headers['x-test-capture'] === '1') {
+        // Echo what the gateway actually forwarded, for the system-message
+        // normalisation test.
+        const chunks: Buffer[] = []
+        req.on('data', (c: Buffer) => chunks.push(c))
+        req.on('end', () => {
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(Buffer.concat(chunks).toString('utf8'))
+        })
+        return
+      }
       res.writeHead(400, { 'content-type': 'application/json' })
       res.end(JSON.stringify({ error: { message: 'model is not loaded' } }))
       return
@@ -144,6 +155,30 @@ describe('gateway — the OpenAI and Anthropic side', () => {
       data: { id: string; context_length?: number }[]
     }
     expect(body.data[0]?.context_length).toBe(131072)
+  })
+
+  it('moves a stray system message before the template sees it', async () => {
+    // Claude Desktop, through a provider switcher, sends a system message
+    // that is not first. Qwen's template raises and the client retries ten
+    // times; the gateway merges it into the one leading system instead.
+    const res = await fetch(url('/v1/messages'), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-capture': '1' },
+      body: JSON.stringify({
+        system: 'Top.',
+        messages: [
+          { role: 'user', content: 'Hi' },
+          { role: 'system', content: 'Middle.' },
+          { role: 'user', content: 'Say OK' },
+        ],
+      }),
+    })
+    const body = (await res.json()) as {
+      system: { text: string }[]
+      messages: { role: string }[]
+    }
+    expect(body.system.map((b) => b.text)).toEqual(['Top.', 'Middle.'])
+    expect(body.messages.map((m) => m.role)).toEqual(['user', 'user'])
   })
 
   it('passes a stream through in pieces, not in one lump', async () => {

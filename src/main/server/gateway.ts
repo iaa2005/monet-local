@@ -22,6 +22,7 @@
 import { createServer, request, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { exitMessage } from './instance-exit.js'
 import type { Router } from './router.js'
+import { normaliseChatBody } from './system-messages.js'
 
 export interface GatewayDeps {
   router: () => Router | null
@@ -206,56 +207,88 @@ export class Gateway {
       return
     }
 
-    const upstream = request(
-      {
-        host: '127.0.0.1',
-        port: router.port,
-        path: req.url,
-        method: req.method,
-        headers: { ...req.headers, host: `127.0.0.1:${router.port}` },
-      },
-      (up) => {
-        const headers = { ...up.headers }
-        // A refusal for a model that exists but is not loaded is actionable;
-        // say where the action is rather than leaving the client to guess.
-        if (up.statusCode === 400) {
-          headers['x-monet-local'] = 'load the model in Monet Local'
-        }
-        // The router answers 500 "proxy error: Could not establish
-        // connection" when a model's own server has died — which is true and
-        // useless. We watched it die and know what killed it, so say that
-        // instead. Only for this one shape: everything else is passed
-        // through byte for byte, streaming included.
-        const crash = up.statusCode === 500 ? router.lastCrash() : undefined
-        if (crash) {
-          up.resume()
-          json(res, 503, {
-            error: {
-              message: exitMessage(crash),
-              type: 'model_crashed',
-              model: crash.id,
-              code: crash.code,
-            },
-          })
-          return
-        }
-        res.writeHead(up.statusCode ?? 502, headers)
-        up.pipe(res)
-      },
-    )
-    upstream.on('error', (err) => {
-      if (res.headersSent || res.destroyed) return
-      json(res, 502, { error: { message: `router: ${err.message}` } })
+    // Chat bodies are read before forwarding so a system message the model's
+    // template would reject can be moved to the front. Everything else stays
+    // a pipe: the response must stream, and so must the request when it is
+    // not one of these two routes.
+    const forward = (body?: Buffer): void => {
+      const headers = {
+        ...req.headers,
+        host: `127.0.0.1:${router.port}`,
+      } as Record<string, string | string[] | undefined>
+      if (body) {
+        headers['content-length'] = String(body.length)
+        delete headers['transfer-encoding']
+      }
+      const upstream = request(
+        {
+          host: '127.0.0.1',
+          port: router.port,
+          path: req.url,
+          method: req.method,
+          headers,
+        },
+        (up) => {
+          const headers = { ...up.headers }
+          // A refusal for a model that exists but is not loaded is actionable;
+          // say where the action is rather than leaving the client to guess.
+          if (up.statusCode === 400) {
+            headers['x-monet-local'] = 'load the model in Monet Local'
+          }
+          // The router answers 500 "proxy error: Could not establish
+          // connection" when a model's own server has died — which is true and
+          // useless. We watched it die and know what killed it, so say that
+          // instead. Only for this one shape: everything else is passed
+          // through byte for byte, streaming included.
+          const crash = up.statusCode === 500 ? router.lastCrash() : undefined
+          if (crash) {
+            up.resume()
+            json(res, 503, {
+              error: {
+                message: exitMessage(crash),
+                type: 'model_crashed',
+                model: crash.id,
+                code: crash.code,
+              },
+            })
+            return
+          }
+          res.writeHead(up.statusCode ?? 502, headers)
+          up.pipe(res)
+        },
+      )
+      upstream.on('error', (err) => {
+        if (res.headersSent || res.destroyed) return
+        json(res, 502, { error: { message: `router: ${err.message}` } })
+      })
+      // The client hung up — Stop was pressed, the window closed. Without this
+      // the router's side of the conversation stayed open and the model went
+      // on generating to the end of its answer for nobody: pipes carry bytes
+      // one way, and a closed downstream does not close the upstream by
+      // itself. Destroying the request is what llama.cpp reads as "stop".
+      res.on('close', () => {
+        if (!res.writableFinished) upstream.destroy()
+      })
+      if (body) upstream.end(body)
+      else req.pipe(upstream)
+    }
+
+    const route = (req.url ?? '').split('?')[0]
+    const chatBody =
+      req.method === 'POST' &&
+      (route === '/v1/messages' || route === '/v1/chat/completions')
+    if (!chatBody) {
+      forward()
+      return
+    }
+    const chunks: Buffer[] = []
+    req.on('data', (chunk: Buffer) => chunks.push(chunk))
+    req.on('end', () => {
+      if (res.destroyed) return
+      const raw = Buffer.concat(chunks)
+      const next = normaliseChatBody(route, raw.toString('utf8'))
+      forward(next === undefined ? raw : Buffer.from(next, 'utf8'))
     })
-    // The client hung up — Stop was pressed, the window closed. Without this
-    // the router's side of the conversation stayed open and the model went
-    // on generating to the end of its answer for nobody: pipes carry bytes
-    // one way, and a closed downstream does not close the upstream by
-    // itself. Destroying the request is what llama.cpp reads as "stop".
-    res.on('close', () => {
-      if (!res.writableFinished) upstream.destroy()
-    })
-    req.pipe(upstream)
   }
 }
 
