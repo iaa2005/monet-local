@@ -3,6 +3,7 @@ import {
   attentionLayers,
   kvBytesPerToken,
   kvCacheBytes,
+  slidingWindowLayers,
   type ModelGeometry,
 } from './geometry.js'
 
@@ -27,6 +28,29 @@ const DENSE: ModelGeometry = {
   valueLength: 128,
 }
 
+/**
+ * Gemma 4 E4B, read from the real header on this machine.
+ *
+ * 42 blocks in a pattern of five windowed then one full; the window is 512
+ * tokens and its heads are 256 elements against the full layers' 512. It
+ * stores 18 shared KV layers, so llama.cpp gives a cache to the first 24
+ * blocks only (`n_layer_kv_from_start`) and lets the rest reuse one.
+ *
+ * Measured: at 128k the process held ~8.5 GiB in total with the projector —
+ * weights 5.0, projector 0.9, compute buffers ~0.7, and the cache below.
+ */
+const GEMMA4_E4B: ModelGeometry = {
+  blockCount: 42,
+  kvHeads: 2,
+  keyLength: 512,
+  valueLength: 512,
+  slidingWindow: 512,
+  slidingWindowPattern: Array.from({ length: 42 }, (_, il) => il % 6 < 5),
+  keyLengthSwa: 256,
+  valueLengthSwa: 256,
+  kvLayers: 24,
+}
+
 describe('attentionLayers', () => {
   it('counts only the full-attention blocks of a hybrid', () => {
     // 65 blocks, every 4th is attention. Counting all 65 would over-state the
@@ -36,6 +60,14 @@ describe('attentionLayers', () => {
 
   it('counts every block when there is no interval', () => {
     expect(attentionLayers(DENSE)).toBe(32)
+  })
+
+  it('separates the windowed blocks of a Gemma 4 model', () => {
+    // Only the first 24 blocks own a cache, and in that run every sixth is
+    // full attention: four of them. The other twenty stop growing at 512
+    // tokens. Counting all 42 as full over-stated the 128k cache sixfold.
+    expect(attentionLayers(GEMMA4_E4B)).toBe(4)
+    expect(slidingWindowLayers(GEMMA4_E4B)).toBe(20)
   })
 })
 
@@ -62,5 +94,21 @@ describe('kvBytesPerToken', () => {
       (64 * 1024 * 1.0625) / 2,
       0,
     )
+  })
+
+  it('charges Gemma 4 only for the blocks whose cache grows', () => {
+    // Four full layers, 2 heads, 512+512 halves, f16: 16 KiB per token.
+    // The windowed twenty are not in this number — they stop at the window.
+    expect(kvBytesPerToken(GEMMA4_E4B)).toBe(16 * 1024)
+  })
+
+  it('puts Gemma 4 at 128k near 2 GiB instead of 21', () => {
+    // The number the old estimator got wrong by six times. 4 full layers of
+    // 16 KiB/token at 131072 plus twenty 512-token windows of 4 KiB/token.
+    const bytes = kvCacheBytes(GEMMA4_E4B, 131072)
+    expect(bytes / 1024 ** 3).toBeCloseTo(2.04, 1)
+
+    const quantised = kvCacheBytes(GEMMA4_E4B, 131072, 'q8_0', 'q4_0')
+    expect(quantised / 1024 ** 3).toBeCloseTo(0.82, 1)
   })
 })

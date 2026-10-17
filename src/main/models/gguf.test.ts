@@ -4,7 +4,12 @@ import { closeSync, mkdtempSync, openSync, readSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describeModel, displayNameFor, modelId } from './describe.js'
-import { readGgufHeader, TruncatedGgufError } from './gguf.js'
+import {
+  readGgufHeader,
+  TruncatedGgufError,
+  type GgufHeader,
+  type GgufValue,
+} from './gguf.js'
 
 /**
  * The reader is checked against the real files on the dev machine when they
@@ -25,6 +30,60 @@ describe('modelId', () => {
 
   it('survives characters an INI section or URL would choke on', () => {
     expect(modelId('My Model (v2)!.gguf')).toBe('my-model-v2')
+  })
+})
+
+describe('sliding-window metadata', () => {
+  /** Gemma 4 E4B as llama.cpp reads it, without a 5 GB file behind it. */
+  const header = (pattern: GgufValue): GgufHeader => ({
+    version: 3,
+    tensorCount: 0,
+    kv: {
+      'general.architecture': 'gemma4',
+      'gemma4.block_count': 42,
+      'gemma4.attention.head_count_kv': 2,
+      'gemma4.attention.key_length': 512,
+      'gemma4.attention.value_length': 512,
+      'gemma4.attention.sliding_window': 512,
+      'gemma4.attention.sliding_window_pattern': pattern,
+      'gemma4.attention.key_length_swa': 256,
+      'gemma4.attention.value_length_swa': 256,
+      'gemma4.attention.shared_kv_layers': 18,
+    },
+    tensorNames: [],
+    weightBytes: 0,
+    expertBytes: 0,
+    fileSize: 1,
+  })
+
+  it('reads the per-block pattern and the shared KV layers', () => {
+    const pattern = Array.from({ length: 42 }, (_, il) => il % 6 < 5)
+    const m = describeModel('Gemma-4-E4B-Q4_K_M.gguf', header(pattern))
+    expect(m.geometry).toEqual({
+      blockCount: 42,
+      kvHeads: 2,
+      keyLength: 512,
+      valueLength: 512,
+      slidingWindowPattern: pattern,
+      slidingWindow: 512,
+      keyLengthSwa: 256,
+      valueLengthSwa: 256,
+      // 42 - 18 shared: the blocks that own a cache.
+      kvLayers: 24,
+    })
+    // Four full layers at 16 KiB/token; the windowed twenty do not grow.
+    expect(m.kvBytesPerToken).toBe(16 * 1024)
+  })
+
+  it('expands the older integer form of the pattern', () => {
+    // Gemma 3 and earlier store the period, not an array; llama.cpp's
+    // default `dense_first = false` makes every sixth block full attention.
+    const m = describeModel('Gemma-4-E4B-Q4_K_M.gguf', header(6))
+    const flags = m.geometry?.slidingWindowPattern ?? []
+    expect(flags).toHaveLength(42)
+    expect(flags.filter(Boolean)).toHaveLength(35)
+    expect(flags[5]).toBe(false)
+    expect(flags[11]).toBe(false)
   })
 })
 

@@ -54,6 +54,29 @@ function str(kv: Record<string, GgufValue>, key: string): string | undefined {
 }
 
 /**
+ * `sliding_window_pattern` arrives two ways in the wild: an array of booleans,
+ * one per block (Gemma 4), or the period as a number (Gemma 3 and earlier),
+ * where llama.cpp marks every block but the last of each group as windowed
+ * (`load_swa_pattern`, default `dense_first = false`).
+ *
+ * A pattern with no windowed block is not a windowed model, and an array we
+ * had to skip for size tells us nothing.
+ */
+function swaPattern(
+  v: GgufValue | undefined,
+  blockCount: number,
+): boolean[] | undefined {
+  if (Array.isArray(v)) {
+    const flags = v.map((x) => x === true)
+    return flags.some(Boolean) ? flags : undefined
+  }
+  if (typeof v === 'number' && v > 0) {
+    return Array.from({ length: blockCount }, (_, il) => il % v < v - 1)
+  }
+  return undefined
+}
+
+/**
  * A filename turned into an id that is stable, unique within a folder, and
  * safe in an INI section header and a URL.
  *
@@ -154,6 +177,25 @@ export function describeModel(
   const keyLength = num(kv, `${arch}.attention.key_length`) ?? derivedHeadDim
   const valueLength = num(kv, `${arch}.attention.value_length`) ?? derivedHeadDim
 
+  // Windowed attention and shared KV layers. Both shrink the cache enough to
+  // change a verdict: Gemma 4 E4B at 128k is ~2 GiB of f16 cache, not 21,
+  // because 35 of its 42 blocks are windowed and only the first 24 blocks
+  // own a cache at all.
+  const slidingWindow = num(kv, `${arch}.attention.sliding_window`)
+  const pattern = swaPattern(
+    kv[`${arch}.attention.sliding_window_pattern`],
+    blockCount ?? 0,
+  )
+  const keyLengthSwa = num(kv, `${arch}.attention.key_length_swa`)
+  const valueLengthSwa = num(kv, `${arch}.attention.value_length_swa`)
+  const sharedKvLayers = num(kv, `${arch}.attention.shared_kv_layers`)
+  // llama.cpp calls this `n_layer_kv_from_start`: the first N blocks allocate
+  // a cache, later blocks reuse one of those.
+  const kvLayers =
+    sharedKvLayers !== undefined && blockCount
+      ? blockCount - sharedKvLayers
+      : undefined
+
   const geometry: ModelGeometry | undefined =
     blockCount && kvHeads && keyLength && valueLength
       ? {
@@ -164,6 +206,15 @@ export function describeModel(
           ...(num(kv, `${arch}.full_attention_interval`) !== undefined
             ? { fullAttentionInterval: num(kv, `${arch}.full_attention_interval`)! }
             : {}),
+          ...(pattern && slidingWindow
+            ? {
+                slidingWindowPattern: pattern,
+                slidingWindow,
+                ...(keyLengthSwa !== undefined ? { keyLengthSwa } : {}),
+                ...(valueLengthSwa !== undefined ? { valueLengthSwa } : {}),
+              }
+            : {}),
+          ...(kvLayers !== undefined && kvLayers > 0 ? { kvLayers } : {}),
         }
       : undefined
 

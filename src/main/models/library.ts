@@ -27,8 +27,10 @@ import { readGgufHeader } from './gguf.js'
  *
  * 3: projectors are paired by name, not by taking the first one in the
  * folder — see `projectorFor`.
+ * 4: geometry carries sliding-window attention and shared KV layers, so the
+ * estimator stops over-stating Gemma 4's cache.
  */
-const DERIVATION = 3
+const DERIVATION = 4
 
 interface CacheEntry {
   mtimeMs: number

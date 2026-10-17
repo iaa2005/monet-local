@@ -639,6 +639,10 @@ export const HANDBOOK_EN: Chapter[] = [
             t: 'At the advertised maximum of 262,144 tokens that is $64 \\text{ KiB} \\cdot 262144 = 16$ GiB of cache, on top of sixteen gigabytes of weights. Which is why the context slider in this program sits next to a memory estimate rather than on its own.',
           },
           {
+            k: 'p',
+            t: 'Not every block keeps the whole context. Gemma 4 E4B is the other shape of the same idea: 35 of its 42 blocks attend only to a sliding window of 512 tokens, so their cache stops growing once the window is full, and it declares 18 shared KV layers — llama.cpp gives a cache to the first 24 blocks and lets the rest reuse one. At 128k that is about 2 GiB of f16 cache, not the 21 GiB a count of all 42 blocks would predict.',
+          },
+          {
             k: 'fig',
             id: 'kv-growth',
             caption:
@@ -650,7 +654,7 @@ export const HANDBOOK_EN: Chapter[] = [
           },
           {
             k: 'app',
-            t: 'Both flags are in the configuration, and the verdict recomputes on every change. Ignore the hybrid structure and count all 65 layers, and the estimate overstates the cache fourfold and refuses configurations that run perfectly well — which is why the program reads `full_attention_interval` out of the header.',
+            t: 'Both flags are in the configuration, and the verdict recomputes on every change. Ignore the hybrid structure and count all 65 layers, and the estimate overstates the cache fourfold and refuses configurations that run perfectly well — which is why the program reads `full_attention_interval`, `sliding_window_pattern` and `shared_kv_layers` out of the header.',
           },
         ],
       },
