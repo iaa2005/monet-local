@@ -24,8 +24,11 @@ import { readGgufHeader } from './gguf.js'
  * improving a display name left every already-indexed model showing the old
  * one, for good: the files had not been touched, so nothing was ever re-read.
  * This is the part of the key that belongs to us.
+ *
+ * 3: projectors are paired by name, not by taking the first one in the
+ * folder — see `projectorFor`.
  */
-const DERIVATION = 2
+const DERIVATION = 3
 
 interface CacheEntry {
   mtimeMs: number
@@ -92,9 +95,61 @@ function isDrafter(info: { architecture: string }): boolean {
   return DRAFTER_ARCHS.has(info.architecture)
 }
 
-function findProjector(dir: string, files: string[]): string | undefined {
-  const p = files.find(isProjector)
-  return p ? join(dir, p) : undefined
+/** `mmproj-Gemma-4-E4B-f16.gguf` → `gemma4e4bf16`. */
+function stem(name: string): string {
+  return name
+    .replace(/\.gguf$/i, '')
+    .replace(/^mmproj[-_.]/i, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+}
+
+function commonPrefix(a: string, b: string): number {
+  const max = Math.min(a.length, b.length)
+  let i = 0
+  while (i < max && a[i] === b[i]) i++
+  return i
+}
+
+/** What two names must share before a folder's pairing is trusted. */
+const MIN_PROJECTOR_PREFIX = 4
+
+/**
+ * The projector whose name is the model's, when a folder holds several.
+ *
+ * The folder used to be the whole relation: whichever `mmproj` came first was
+ * handed to every model beside it. That works for LM Studio's one-repo-per
+ * folder layout and fails on a flat download folder, where Gemma's projector
+ * was attached to Qwen, SmolLM2 and LFM at once and llama.cpp refused each
+ * with "mismatch between text model (n_embd = 576) and mmproj
+ * (n_embd = 2560)".
+ *
+ * Names are the second signal. Real pairs share the model's family in the
+ * filename (`gemma-4-e4b-…` / `mmproj-gemma-4-e4b-…`) and different models
+ * share nothing, so the longest common prefix after dropping the `mmproj`
+ * marker and separators is enough to tell them apart — including several
+ * quants of one model, which all match the projector equally.
+ *
+ * No match means no vision, not someone else's projector. The caller keeps
+ * the old folder-is-the-relation pair for the one-model/one-projector case,
+ * where LM Studio names the file after the vision tower and names prove
+ * nothing.
+ */
+export function projectorFor(
+  modelName: string,
+  projectors: string[],
+): string | undefined {
+  const target = stem(modelName)
+  let best: string | undefined
+  let bestScore = 0
+  for (const candidate of projectors) {
+    const score = commonPrefix(target, stem(candidate))
+    if (score > bestScore) {
+      best = candidate
+      bestScore = score
+    }
+  }
+  return bestScore >= MIN_PROJECTOR_PREFIX ? best : undefined
 }
 
 export interface ScanResult {
@@ -121,10 +176,16 @@ export function scanFolder(root: string, cache: Cache): ScanResult {
     }
 
     const ggufs = entries.filter((e) => e.toLowerCase().endsWith('.gguf'))
-    const projector = findProjector(dir, ggufs)
+    const projectors = ggufs.filter(isProjector)
+    const modelFiles = ggufs.filter((name) => !isProjector(name))
+    // One model and one projector in a folder: the folder is the relation,
+    // whatever the files are called. LM Studio names the projector after the
+    // vision tower (`mmproj-model-f16.gguf`), which names nothing here.
+    const folderPair = projectors.length === 1 && modelFiles.length === 1
 
-    for (const name of ggufs) {
-      if (isProjector(name)) continue
+    for (const name of modelFiles) {
+      const candidate = folderPair ? projectors[0] : projectorFor(name, projectors)
+      const projector = candidate ? join(dir, candidate) : undefined
       const path = join(dir, name)
       try {
         const st = statSync(path)

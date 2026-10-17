@@ -86,8 +86,22 @@ describe('buildArgs', () => {
 
   it('turns a boolean off by removing the flag, not by negating it', () => {
     expect(buildArgs({ noRepack: false })).not.toContain('--no-repack')
-    expect(buildArgs({ mlock: true })).toContain('--mlock')
-    expect(buildArgs({ mlock: false })).not.toContain('--mlock')
+    expect(buildArgs({ mlock: false })).not.toContain('--load-mode')
+  })
+
+  it('folds mlock and mmap into the one --load-mode argument', () => {
+    // b11712 removed --mlock and --no-mmap; the preset parser rejects a bare
+    // `mmap` key and the router never listens. The same settings still have
+    // a spelling every build in the reference set understands.
+    expect(buildArgs({ mlock: true }).join(' ')).toContain(
+      '--load-mode mmap+mlock',
+    )
+    expect(
+      buildArgs({ mlock: true, noMmap: true }).join(' '),
+    ).toContain('--load-mode mlock')
+    expect(buildArgs({ noMmap: true }).join(' ')).toContain('--load-mode none')
+    // Saying nothing is not the same as passing the default explicitly.
+    expect(buildArgs({}).join(' ')).not.toContain('--load-mode')
   })
 
   it('appends extra arguments, respecting quotes', () => {
@@ -118,6 +132,19 @@ describe('buildIniSection', () => {
     expect(ini).toContain('repack = 0')
     expect(ini).toContain('kv-offload = 0')
     expect(ini).not.toContain('no-repack')
+  })
+
+  it('writes load-mode, because b11712 rejects the old mmap key', () => {
+    // Measured: a preset carrying `mmap = 0` makes llama-server exit at
+    // startup with "option 'mmap' not recognized in preset", and the app
+    // reports only "llama-server did not become ready".
+    const ini = buildIniSection('m', { noMmap: true }, 'D:/m.gguf')
+    expect(ini).toContain('load-mode = none')
+    expect(ini).not.toContain('mmap =')
+    expect(buildIniSection('m', { mlock: true }, 'D:/m.gguf')).toContain(
+      'load-mode = mmap+mlock',
+    )
+    expect(buildIniSection('m', {}, 'D:/m.gguf')).not.toContain('load-mode')
   })
 
   it('names the section after the model id and always kills the web UI', () => {

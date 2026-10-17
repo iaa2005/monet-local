@@ -7,8 +7,19 @@
  * test — a preview that lies is worse than no preview.
  */
 
+import { loadMode } from './load-mode.js'
 import { FLAGS } from './registry.js'
 import type { FlagDef, FlagValue, Profile } from './types.js'
+
+/**
+ * Settings llama.cpp composes into one `--load-mode` argument.
+ *
+ * Their registry entries still describe the two switches the form shows, but
+ * neither is a flag of its own any more: the old `--mlock`, `--mmap` and
+ * `--no-mmap` spellings are deprecated and, in current builds, rejected from
+ * a preset outright. See load-mode.ts for the build that broke and why.
+ */
+const LOAD_MODE_FLAGS = new Set(['mlock', 'noMmap'])
 
 /**
  * Flags Monet Local sets itself, on every run, no matter the profile.
@@ -96,7 +107,7 @@ export function buildArgs(raw: Profile, ctx: BuildContext = {}): string[] {
   args.push(...ALWAYS_ARGS)
 
   for (const [id, def] of Object.entries(FLAGS)) {
-    if (id === 'extraArgs') continue
+    if (id === 'extraArgs' || LOAD_MODE_FLAGS.has(id)) continue
     const v = normalise(def, profile[id])
     if (v === undefined) continue
     if (def.type === 'bool') {
@@ -107,6 +118,11 @@ export function buildArgs(raw: Profile, ctx: BuildContext = {}): string[] {
     }
     args.push(def.cli, v as string)
   }
+
+  // After the registry walk: the pair it replaces lives in the memory group,
+  // and the preview should read in the same order the form does.
+  const mode = loadMode(profile)
+  if (mode) args.push('--load-mode', mode)
 
   const extra = profile['extraArgs']
   if (typeof extra === 'string' && extra.trim()) {
@@ -162,7 +178,7 @@ export function buildIniSection(
   if (mmprojPath) lines.push(`mmproj = ${mmprojPath}`)
 
   for (const [flagId, def] of Object.entries(FLAGS)) {
-    if (flagId === 'extraArgs' || !def.ini) continue
+    if (flagId === 'extraArgs' || LOAD_MODE_FLAGS.has(flagId) || !def.ini) continue
     if (flagId === 'mmproj') continue // handled above, from the library
     const v = normalise(def, profile[flagId])
     if (v === undefined) continue
@@ -172,6 +188,11 @@ export function buildIniSection(
     }
     lines.push(`${def.ini} = ${v as string}`)
   }
+
+  // The old `mmap = 0` line is what b11712 refused to parse; `load-mode` is
+  // the same setting under the name every build in the reference set knows.
+  const mode = loadMode(profile)
+  if (mode) lines.push(`load-mode = ${mode}`)
   return lines.join('\n')
 }
 

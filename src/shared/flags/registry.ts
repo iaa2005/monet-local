@@ -122,8 +122,9 @@ export const FLAGS: Registry = {
     },
   },
   mlock: {
-    cli: '--mlock',
-    ini: 'mlock',
+    // One half of `--load-mode`; build.ts folds it with noMmap. The separate
+    // `--mlock` and `--no-mmap` flags are gone from current llama.cpp builds.
+    cli: '--load-mode',
     group: 'memory',
     level: 'advanced',
     type: 'bool',
@@ -135,9 +136,9 @@ export const FLAGS: Registry = {
     },
   },
   noMmap: {
-    cli: '--no-mmap',
-    ini: 'mmap',
-    negated: true,
+    // The other half of `--load-mode`. A preset carrying the old `mmap` key
+    // is rejected by b11712 before the router listens — see load-mode.ts.
+    cli: '--load-mode',
     group: 'memory',
     level: 'advanced',
     type: 'bool',

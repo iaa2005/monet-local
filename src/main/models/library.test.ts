@@ -11,7 +11,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest'
 const tmp = mkdtempSync(join(tmpdir(), 'monet-local-test-'))
 vi.mock('electron', () => ({ app: { getPath: () => tmp } }))
 
-const { scanFolders } = await import('./library.js')
+const { projectorFor, scanFolders } = await import('./library.js')
 const { ensureDirs, indexDir } = await import('../app/settings-store.js')
 const { probe } = await import('../runtimes/manager.js')
 
@@ -22,6 +22,55 @@ const haveModels = existsSync(MODELS)
 const haveLlama = existsSync(join(LLAMA, 'llama-server.exe'))
 
 beforeAll(() => ensureDirs())
+
+describe('projectorFor', () => {
+  // A flat download folder, measured: two projectors and four models in
+  // `C:\Data\Models`. Taking the first projector handed Gemma's to everyone,
+  // and llama.cpp refused Qwen, SmolLM2 and LFM with "mismatch between text
+  // model (n_embd = 576) and mmproj (n_embd = 2560)".
+  const projectors = [
+    'mmproj-Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-f16.gguf',
+    'mmproj-Qwen_Qwen3.5-2B-f16.gguf',
+  ]
+
+  it('picks the projector named after the model', () => {
+    expect(
+      projectorFor(
+        'Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf',
+        projectors,
+      ),
+    ).toBe(projectors[0])
+    expect(projectorFor('Qwen_Qwen3.5-2B-Q4_K_M.gguf', projectors)).toBe(
+      projectors[1],
+    )
+  })
+
+  it('leaves a model with no projector of its own without one', () => {
+    // No vision is a working text model; someone else's 0.9 GB projector is
+    // a load failure.
+    expect(projectorFor('SmolLM2-135M-Instruct-F16.gguf', projectors)).toBe(
+      undefined,
+    )
+  })
+
+  it('pairs several quants of one model with its projector', () => {
+    // A repo folder can hold Q4/Q5/Q6 beside one projector; every quant
+    // belongs to it.
+    const quants = [
+      'Qwen3.8-27B-Q4_K_M.gguf',
+      'Qwen3.8-27B-Q5_K_M.gguf',
+      'Qwen3.8-27B-Q6_K.gguf',
+    ]
+    const proj = ['mmproj-Qwen3.8-27B-f16.gguf']
+    for (const q of quants) expect(projectorFor(q, proj)).toBe(proj[0])
+  })
+
+  it('does not pair files whose names share nothing', () => {
+    // The single-model fallback still covers `model.gguf` beside
+    // `mmproj-model-f16.gguf`; a folder with several models gets no guess.
+    expect(projectorFor('model.gguf', ['mmproj-vit-f16.gguf'])).toBe(undefined)
+  })
+})
 
 describe.skipIf(!haveModels)('scanFolders on the real library', () => {
   it('finds the models and never the projector', () => {

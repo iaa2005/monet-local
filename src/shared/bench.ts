@@ -14,6 +14,7 @@
  * token.
  */
 
+import { loadMode } from './flags/load-mode.js'
 import type { Profile } from './flags/types.js'
 
 export interface BenchRow {
@@ -168,20 +169,6 @@ const BENCH_FLAGS: Record<string, string> = {
  * must not be counted as uncovered.
  */
 const TRANSLATED = new Set(['noKvOffload', 'mlock', 'noMmap'])
-
-/**
- * mlock and mmap are one argument here (`--load-mode`) where the server
- * takes two independent flags. Undefined means "leave llama-bench alone",
- * which is not the same as passing its default explicitly.
- */
-function loadMode(profile: Profile): string | undefined {
-  const mlock = profile['mlock'] === true
-  const mmap = profile['noMmap'] !== true
-  if (mlock && mmap) return 'mmap+mlock'
-  if (mlock) return 'mlock'
-  if (!mmap) return 'none'
-  return undefined
-}
 
 /** Settings a profile may carry that a benchmark cannot honour. */
 export function unsupportedByBench(profile: Profile): string[] {
